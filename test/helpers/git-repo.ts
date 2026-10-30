@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 export type TempRepo = {
-  /** Absolute path to the repo root (symlinks resolved, e.g. /private/var on macOS). */
+  /** Absolute path to the repo root (symlinks and Windows short names resolved). */
   dir: string;
   /** Run git in the repo and return trimmed stdout. */
   git: (...args: string[]) => string;
@@ -31,7 +31,8 @@ type Options = {
  * after the test: `using repo = createTempRepo();`
  */
 export function createTempRepo({ init = true }: Options = {}): TempRepo {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ward-test-")));
+  // `.native` also expands Windows 8.3 short names (RUNNER~1 → runneradmin), like git does.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ward-test-")));
 
   // Isolate from the developer's global/system git config (hooksPath, signing, templates).
   const env = {
