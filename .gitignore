@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Tests
+coverage/
+
+# Logs
+*.log
+
+# Ward local config overrides
+ward.local.*

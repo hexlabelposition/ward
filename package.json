@@ -1,0 +1,55 @@
+{
+  "name": "@hexlabelposition/ward",
+  "version": "0.0.0",
+  "description": "Git hooks and staged-file linting in one tool. One config, zero hook folders.",
+  "license": "MIT",
+  "author": "Vladyslav Kudriashov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hexlabelposition/ward.git"
+  },
+  "keywords": [
+    "git",
+    "hooks",
+    "pre-commit",
+    "husky",
+    "lint-staged"
+  ],
+  "type": "module",
+  "bin": {
+    "ward": "./dist/cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "tsdown": "^0.23.4",
+    "typescript": "~6.0",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
+  }
+}
