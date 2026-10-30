@@ -135,11 +135,11 @@ If `MERGE_HEAD`, `rebase-merge/` or `rebase-apply/` exists in the git dir, `ward
 
 ### Config loading
 
-| File               | Loader                                         |
-| ------------------ | ---------------------------------------------- |
-| `ward.config.ts`   | native `import()` (Node / Bun / Deno)          |
-| `ward.yml`, `.yaml`| `yaml`                                         |
-| `package.json`     | `JSON.parse`, `"ward"` key                     |
+| File                | Loader                                |
+| ------------------- | ------------------------------------- |
+| `ward.config.ts`    | native `import()` (Node / Bun / Deno) |
+| `ward.yml`, `.yaml` | `yaml`                                |
+| `package.json`      | `JSON.parse`, `"ward"` key            |
 
 Discovery order: `ward.config.ts` → `ward.yml` / `ward.yaml` → `package.json`. If several sources exist → error, not a silent pick.
 
@@ -177,12 +177,12 @@ type Task = {
 
 `extends` is a list; entries are merged in order, then the repo config, then `ward.local.*`. Each entry is one of:
 
-| Entry             | Resolved as                                                        |
-| ----------------- | ------------------------------------------------------------------ |
-| `ward:<name>`     | Built-in preset from `src/presets/`                                |
-| Config object     | Used as is (TS config: `import { ts } from "@hexlabelposition/ward/presets"`) |
-| `./…`, `../…`     | Local config file, relative to the config that lists it            |
-| Package name      | npm package resolved from the repo root via `import.meta.resolve`; default export (config object) or `ward.yml` in the package root |
+| Entry         | Resolved as                                                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `ward:<name>` | Built-in preset from `src/presets/`                                                                                                 |
+| Config object | Used as is (TS config: `import { ts } from "@hexlabelposition/ward/presets"`)                                                       |
+| `./…`, `../…` | Local config file, relative to the config that lists it                                                                             |
+| Package name  | npm package resolved from the repo root via `import.meta.resolve`; default export (config object) or `ward.yml` in the package root |
 
 **Presets live in the main package**, not in separate `ward-preset-*` packages: a preset is a few lines of config, so it adds almost nothing to package size, needs no extra install, and its version always matches Ward's. The trade-off - a preset change needs a Ward release - is fine for presets.
 
@@ -190,12 +190,12 @@ type Task = {
 
 ### File sources
 
-| Source           | How                                                  |
-| ---------------- | ---------------------------------------------------- |
-| `{staged_files}` | `git diff --cached --name-only -z --diff-filter=ACMR` |
+| Source           | How                                                                     |
+| ---------------- | ----------------------------------------------------------------------- |
+| `{staged_files}` | `git diff --cached --name-only -z --diff-filter=ACMR`                   |
 | `{push_files}`   | diff between the remote ref and the local ref from the `pre-push` stdin |
-| `{all_files}`    | `git ls-files -z`                                    |
-| `--from-ref`     | `git diff --name-only -z <ref>...HEAD`               |
+| `{all_files}`    | `git ls-files -z`                                                       |
+| `--from-ref`     | `git diff --name-only -z <ref>...HEAD`                                  |
 
 Symlinks are dropped unless the task sets `symlinks: true`.
 

@@ -49,11 +49,11 @@ After that, every `npm install` (or `bun install`) sets up the hooks for everyon
 
 ### Runtimes
 
-| Runtime    | Status                                     |
-| ---------- | ------------------------------------------ |
-| Node ≥ 24  | Supported                                  |
-| Bun ≥ 1.1  | Supported - works without Node installed   |
-| Deno ≥ 2   | Planned - works without Node installed     |
+| Runtime   | Status                                   |
+| --------- | ---------------------------------------- |
+| Node ≥ 24 | Supported                                |
+| Bun ≥ 1.1 | Supported - works without Node installed |
+| Deno ≥ 2  | Planned - works without Node installed   |
 
 Hook stubs use the runtime that installed them; `WARD_RUNTIME=node|bun|deno` overrides it.
 
@@ -70,7 +70,10 @@ For small projects the config can live in `package.json`:
     "hooks": {
       "pre-commit": {
         "tasks": {
-          "format": { "glob": "*.{js,ts,md,json}", "run": "prettier --write {staged_files}" }
+          "format": {
+            "glob": "*.{js,ts,md,json}",
+            "run": "prettier --write {staged_files}"
+          }
         }
       }
     }
@@ -165,25 +168,25 @@ hooks:
 
 ### Hook value forms
 
-| Form                         | Meaning                                      |
-| ---------------------------- | -------------------------------------------- |
-| `'cmd'`                      | Run one command                              |
-| `['a', 'b']`                 | Run commands in order, stop on first failure |
-| `{ tasks: { name: task } }`  | Named tasks with options (see below)         |
+| Form                        | Meaning                                      |
+| --------------------------- | -------------------------------------------- |
+| `'cmd'`                     | Run one command                              |
+| `['a', 'b']`                | Run commands in order, stop on first failure |
+| `{ tasks: { name: task } }` | Named tasks with options (see below)         |
 
 ### Task options
 
-| Option       | Meaning                                                                 |
-| ------------ | ----------------------------------------------------------------------- |
-| `run`        | Command string, or a function `({ files }) => …` (TS config only)       |
-| `glob`       | Only run on matching files; the task is skipped when nothing matches    |
-| `exclude`    | Glob(s) to drop from the matched files                                  |
-| `root`       | Working directory for the task (monorepo package); can be a glob        |
-| `tags`       | Labels used to skip groups of tasks                                     |
-| `stageFixed` | `git add` files the task changed (default: `true`)                      |
-| `symlinks`   | Include symlinked files (default: `false`)                              |
-| `cache`      | Skip files whose content hash hasn't changed since the last green run   |
-| `dependsOn`  | Run only after these tasks succeed (TS config only)                     |
+| Option       | Meaning                                                               |
+| ------------ | --------------------------------------------------------------------- |
+| `run`        | Command string, or a function `({ files }) => …` (TS config only)     |
+| `glob`       | Only run on matching files; the task is skipped when nothing matches  |
+| `exclude`    | Glob(s) to drop from the matched files                                |
+| `root`       | Working directory for the task (monorepo package); can be a glob      |
+| `tags`       | Labels used to skip groups of tasks                                   |
+| `stageFixed` | `git add` files the task changed (default: `true`)                    |
+| `symlinks`   | Include symlinked files (default: `false`)                            |
+| `cache`      | Skip files whose content hash hasn't changed since the last green run |
+| `dependsOn`  | Run only after these tasks succeed (TS config only)                   |
 
 ### Hook options
 
@@ -212,11 +215,11 @@ Long file lists are split into chunks so commands stay under OS argument limits 
 
 `extends` takes a list of configs to start from. The repo config and `ward.local.*` are merged on top.
 
-| Entry                  | Example                    | Use for                                       |
-| ---------------------- | -------------------------- | --------------------------------------------- |
-| Built-in preset        | `"ward:ts"` / `ts` import  | Ready-made setups shipped inside Ward         |
-| Local path             | `"../shared/ward.yml"`     | Monorepos, configs next to the repo           |
-| npm package            | `"@acme/ward-config"`      | One config for many repositories of a company |
+| Entry           | Example                   | Use for                                       |
+| --------------- | ------------------------- | --------------------------------------------- |
+| Built-in preset | `"ward:ts"` / `ts` import | Ready-made setups shipped inside Ward         |
+| Local path      | `"../shared/ward.yml"`    | Monorepos, configs next to the repo           |
+| npm package     | `"@acme/ward-config"`     | One config for many repositories of a company |
 
 ```ts
 // ward.config.ts
@@ -238,25 +241,25 @@ Presets ship with Ward, so there is nothing extra to install and their version a
 
 ## CLI
 
-| Command            | What it does                                                         |
-| ------------------ | -------------------------------------------------------------------- |
-| `ward`             | Install hook stubs into `.git/hooks` (what `prepare` runs)           |
-| `ward init`        | Create config, `prepare` script and `.gitignore` entry (run once)    |
-| `ward run <hook>`  | Run a hook manually - useful for testing without committing          |
-| `ward doctor`      | Find `core.hooksPath` conflicts and leftovers from other hook managers |
-| `ward migrate`     | Convert husky + lint-staged, lefthook or simple-git-hooks setups     |
-| `ward uninstall`   | Remove Ward's hook stubs                                             |
+| Command           | What it does                                                           |
+| ----------------- | ---------------------------------------------------------------------- |
+| `ward`            | Install hook stubs into `.git/hooks` (what `prepare` runs)             |
+| `ward init`       | Create config, `prepare` script and `.gitignore` entry (run once)      |
+| `ward run <hook>` | Run a hook manually - useful for testing without committing            |
+| `ward doctor`     | Find `core.hooksPath` conflicts and leftovers from other hook managers |
+| `ward migrate`    | Convert husky + lint-staged, lefthook or simple-git-hooks setups       |
+| `ward uninstall`  | Remove Ward's hook stubs                                               |
 
 `ward run` flags:
 
-| Flag                | Meaning                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `--all-files`       | Use all tracked files instead of staged files              |
-| `--from-ref <ref>`  | Use files changed relative to `<ref>` (e.g. `origin/main`) |
-| `--ci`              | Check-only mode, see [CI](#ci)                             |
-| `--no-backup`       | Skip the pre-run backup (large repos)                      |
-| `--no-revert`       | Keep task changes when a task fails                        |
-| `--skip-tag <tag>`  | Skip tasks with this tag                                   |
+| Flag               | Meaning                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `--all-files`      | Use all tracked files instead of staged files              |
+| `--from-ref <ref>` | Use files changed relative to `<ref>` (e.g. `origin/main`) |
+| `--ci`             | Check-only mode, see [CI](#ci)                             |
+| `--no-backup`      | Skip the pre-run backup (large repos)                      |
+| `--no-revert`      | Keep task changes when a task fails                        |
+| `--skip-tag <tag>` | Skip tasks with this tag                                   |
 
 ## Skipping
 
