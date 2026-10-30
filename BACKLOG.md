@@ -8,11 +8,11 @@ Items are numbered so early commits can point to them, for example `feat(hooks):
 
 An empty project that builds, lints and tests.
 
-- [ ] **W1** Check that the `ward` name is available on npm and GitHub, reserve `@hexlabelposition/ward`
-- [ ] **W2** Set up tooling: TypeScript, tsup build, ESM output, `bin` entry, `engines.node: ">=24"`
-- [ ] **W3** Test setup: vitest + helper that creates temp git repos
-- [ ] **W4** Lint/format for the project itself (dogfood Ward once it works)
-- [ ] **W5** CI: GitHub Actions matrix - Ubuntu, macOS, Windows × Node 24 + current, Bun latest, Deno 2
+- [x] **W1** Check that the `ward` name is available on npm and GitHub, reserve `@hexlabelposition/ward`
+- [x] **W2** Set up tooling: TypeScript, tsdown build, ESM output, `bin` entry, `engines.node: ">=24"`
+- [x] **W3** Test setup: vitest + helper that creates temp git repos
+- [x] **W4** Lint/format for the project itself (dogfooding moved to W84)
+- [x] **W5** CI: GitHub Actions matrix - Ubuntu, macOS, Windows × Node 24 + current, Bun latest, Deno 2
 
 ## MVP - hooks without staged files
 
@@ -71,6 +71,7 @@ Replace lint-staged.
 - [ ] **W67** Function tasks: JS/TS function gets the file list (TS config only)
 - [ ] **W33** `parallel: true` for tasks
 - [ ] **W34** Prefixed, readable output in parallel mode
+- [ ] **W84** Dogfood: run this repo's Prettier and ESLint through Ward hooks
 
 ## Safety
 
