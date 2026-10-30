@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run typecheck
+
+  # Bun is only the package manager here: tsdown, tsc and vitest run on the matrix Node.
+  test-node:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [24, current]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test
+
+  # Smoke test: the built package starts under Bun and Deno.
+  # Running the full test suite on these runtimes is W23 / W81.
+  test-runtime:
+    name: smoke (${{ matrix.os }}, ${{ matrix.runtime }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        runtime: [bun, deno]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - if: matrix.runtime == 'bun'
+        run: bun dist/cli.mjs
+      - if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - if: matrix.runtime == 'deno'
+        run: deno run -A dist/cli.mjs
