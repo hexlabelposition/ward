@@ -1,7 +1,13 @@
 import { existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { getRepoPaths } from "../git/paths.ts";
-import { installHooks } from "../hooks/install.ts";
+import { getRepoPaths, type RepoPaths } from "../git/paths.ts";
+import {
+  findForeignHooks,
+  installHooks,
+  type InstallResult,
+} from "../hooks/install.ts";
+import type { HookName } from "../hooks/list.ts";
+import { CHAINED_SUFFIX } from "../hooks/stub.ts";
 import { isErrnoCode } from "../util/errors.ts";
 
 const BIN = join("node_modules", ".bin", "ward");
@@ -9,6 +15,14 @@ const BIN = join("node_modules", ".bin", "ward");
 export type InstallOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** `--chain`: keep foreign hooks as `<hook>.pre-ward` and run them before ward. */
+  chain?: boolean;
+  /**
+   * Asks whether to chain the foreign hooks. Default: a y/N prompt when stdin
+   * and stdout are a TTY; `null` when there is nobody to ask (`prepare` under
+   * most package managers, IDEs), then foreign hooks are left as is.
+   */
+  confirm?: ((hooks: HookName[], where: string) => Promise<boolean>) | null;
 };
 
 /**
@@ -17,17 +31,19 @@ export type InstallOptions = {
  * A no-op (exit 0) in CI, outside a git working tree and without git installed,
  * so `npm install` in CI and Docker never fails because of hooks.
  */
-export function install({
+export async function install({
   cwd = process.cwd(),
   env = process.env,
-}: InstallOptions = {}): number {
+  chain = false,
+  confirm = defaultConfirm(),
+}: InstallOptions = {}): Promise<number> {
   // Checked first: no git process at all in CI.
   if (isCI(env)) {
     console.log("ward: CI detected, skipping hooks install");
     return 0;
   }
 
-  let paths;
+  let paths: RepoPaths | null;
   try {
     paths = getRepoPaths({ cwd, env });
   } catch (error) {
@@ -50,17 +66,49 @@ export function install({
     return 1;
   }
 
+  const where = toPosix(relative(paths.root, paths.hooksDir));
+  if (!chain && confirm) {
+    const foreign = findForeignHooks(paths.hooksDir);
+    if (foreign.length > 0) chain = await confirm(foreign, where);
+  }
+
   const bin = findBin(cwd, paths.root);
   const result = installHooks(paths.hooksDir, {
-    bin: relative(paths.root, bin).replaceAll("\\", "/"),
+    bin: toPosix(relative(paths.root, bin)),
+    chain,
   });
 
-  for (const hook of result.foreign) {
-    console.warn(
-      `ward: ${hook} exists and is not managed by ward, left as is (ward won't run it)`,
+  report(result, where);
+  return 0;
+}
+
+function report(result: InstallResult, where: string) {
+  for (const hook of result.chained) {
+    console.log(
+      `ward: kept existing ${hook} as ${hook}${CHAINED_SUFFIX}, it runs before ward`,
     );
   }
-  const where = relative(paths.root, paths.hooksDir).replaceAll("\\", "/");
+
+  const skipped = result.foreign.filter((f) => f.reason === "not-chained");
+  if (skipped.length > 0) {
+    const names = skipped.map((f) => f.hook).join(", ");
+    console.warn(
+      `ward: hooks not installed by ward found in ${where}: ${names}\n` +
+        "ward: left as is, so ward won't run for them. To keep them and run ward after them:\n" +
+        "ward:   npx ward --chain",
+    );
+  }
+  for (const { hook, reason } of result.foreign) {
+    if (reason === "not-a-file") {
+      console.warn(`ward: ${hook} is not a regular file, left as is`);
+    } else if (reason === "backup-exists") {
+      console.warn(
+        `ward: ${hook} left as is: ${hook}${CHAINED_SUFFIX} already exists. ` +
+          "Remove one of them and reinstall.",
+      );
+    }
+  }
+
   const written = result.written.length;
   const total = written + result.unchanged.length;
   const note =
@@ -70,7 +118,30 @@ export function install({
         ? " (up to date)"
         : ` (${String(written)} updated)`;
   console.log(`ward: ${String(total)} hooks installed in ${where}${note}`);
-  return 0;
+}
+
+function defaultConfirm(): InstallOptions["confirm"] {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
+  return async (hooks, where) => {
+    const { createInterface } = await import("node:readline/promises");
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    try {
+      const answer = await rl.question(
+        `ward: found hooks not installed by ward in ${where}: ${hooks.join(", ")}\n` +
+          `ward: keep them (moved to <hook>${CHAINED_SUFFIX}, run before ward)? [y/N] `,
+      );
+      return /^y(es)?$/i.test(answer.trim());
+    } finally {
+      rl.close();
+    }
+  };
+}
+
+function toPosix(path: string): string {
+  return path.replaceAll("\\", "/");
 }
 
 /** `CI` is set by GitHub Actions, GitLab, CircleCI, Travis, Buildkite, Azure Pipelines and others. */

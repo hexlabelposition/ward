@@ -72,8 +72,23 @@ describe("ward (install)", () => {
     const { status, stderr } = ward(repo);
 
     expect(status).toBe(0);
-    expect(stderr).toContain("pre-commit exists and is not managed by ward");
+    expect(stderr).toContain(
+      "hooks not installed by ward found in .git/hooks: pre-commit",
+    );
+    expect(stderr).toContain("npx ward --chain");
     expect(hook(repo, "pre-commit")).toBe("#!/bin/sh\necho mine\n");
+  });
+
+  it("chains foreign hooks with --chain", () => {
+    using repo = createTempRepo();
+    repo.write(".git/hooks/pre-commit", "#!/bin/sh\necho mine\n");
+
+    const { status, stdout } = ward(repo, ["--chain"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("kept existing pre-commit as pre-commit.pre-ward");
+    expect(hook(repo, "pre-commit.pre-ward")).toBe("#!/bin/sh\necho mine\n");
+    expect(hook(repo, "pre-commit")).toContain("# ward:managed");
   });
 
   it("refuses to install when core.hooksPath is set", () => {

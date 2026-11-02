@@ -6,10 +6,12 @@ import {
   symlinkSync,
   writeFileSync,
   chmodSync,
+  lstatSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { installHooks } from "../../src/hooks/install.ts";
+import { findForeignHooks, installHooks } from "../../src/hooks/install.ts";
 import { HOOKS } from "../../src/hooks/list.ts";
 import { renderStub } from "../../src/hooks/stub.ts";
 import { createTempRepo } from "../helpers/git-repo.ts";
@@ -23,7 +25,12 @@ describe("installHooks", () => {
 
     const result = installHooks(hooksDir);
 
-    expect(result).toEqual({ written: [...HOOKS], unchanged: [], foreign: [] });
+    expect(result).toEqual({
+      written: [...HOOKS],
+      unchanged: [],
+      chained: [],
+      foreign: [],
+    });
     for (const hook of HOOKS) {
       expect(readFileSync(join(hooksDir, hook), "utf8")).toBe(renderStub(hook));
     }
@@ -58,6 +65,7 @@ describe("installHooks", () => {
     expect(installHooks(hooksDir)).toEqual({
       written: [],
       unchanged: [...HOOKS],
+      chained: [],
       foreign: [],
     });
   });
@@ -92,20 +100,92 @@ describe("installHooks", () => {
 
     const result = installHooks(hooksDir);
 
-    expect(result.foreign).toEqual(["pre-commit"]);
+    expect(result.foreign).toEqual([
+      { hook: "pre-commit", reason: "not-chained" },
+    ]);
     expect(result.written).not.toContain("pre-commit");
     expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(foreign);
+    expect(existsSync(join(hooksDir, "pre-commit.pre-ward"))).toBe(false);
   });
 
-  it("treats a directory in place of a hook as foreign", () => {
+  it("finds foreign hooks", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    installHooks(hooksDir);
+    writeFileSync(join(hooksDir, "pre-push"), "#!/bin/sh\ngit lfs pre-push\n");
+    rmSync(join(hooksDir, "commit-msg"));
+    mkdirSync(join(hooksDir, "commit-msg"));
+
+    expect(findForeignHooks(hooksDir)).toEqual(["commit-msg", "pre-push"]);
+  });
+
+  it("chains foreign hooks when asked", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    const foreign = "#!/bin/sh\nnpx lint-staged\n";
+    writeFileSync(join(hooksDir, "pre-commit"), foreign);
+
+    const result = installHooks(hooksDir, { chain: true });
+
+    expect(result.chained).toEqual(["pre-commit"]);
+    expect(result.written).toContain("pre-commit");
+    expect(result.foreign).toEqual([]);
+    expect(readFileSync(join(hooksDir, "pre-commit.pre-ward"), "utf8")).toBe(
+      foreign,
+    );
+    expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(
+      renderStub("pre-commit"),
+    );
+  });
+
+  it("does not overwrite an existing backup", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    writeFileSync(join(hooksDir, "pre-commit.pre-ward"), "old backup\n");
+    writeFileSync(join(hooksDir, "pre-commit"), "new foreign\n");
+
+    const result = installHooks(hooksDir, { chain: true });
+
+    expect(result.foreign).toEqual([
+      { hook: "pre-commit", reason: "backup-exists" },
+    ]);
+    expect(readFileSync(join(hooksDir, "pre-commit.pre-ward"), "utf8")).toBe(
+      "old backup\n",
+    );
+    expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(
+      "new foreign\n",
+    );
+  });
+
+  it("keeps the chain on reinstall", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    writeFileSync(join(hooksDir, "pre-commit"), "foreign\n");
+    installHooks(hooksDir, { chain: true });
+
+    const result = installHooks(hooksDir);
+
+    expect(result.unchanged).toContain("pre-commit");
+    expect(result.foreign).toEqual([]);
+    expect(readFileSync(join(hooksDir, "pre-commit.pre-ward"), "utf8")).toBe(
+      "foreign\n",
+    );
+  });
+
+  it("leaves a directory in place of a hook as is", () => {
     using repo = createTempRepo();
     const hooksDir = join(repo.dir, ".git", "hooks");
     mkdirSync(join(hooksDir, "commit-msg"));
 
-    expect(installHooks(hooksDir).foreign).toEqual(["commit-msg"]);
+    expect(installHooks(hooksDir).foreign).toEqual([
+      { hook: "commit-msg", reason: "not-chained" },
+    ]);
+    expect(installHooks(hooksDir, { chain: true }).foreign).toEqual([
+      { hook: "commit-msg", reason: "not-a-file" },
+    ]);
   });
 
-  posixOnly("treats a symlinked hook as foreign", () => {
+  posixOnly("treats a symlinked hook as foreign and chains the link", () => {
     using repo = createTempRepo();
     const hooksDir = join(repo.dir, ".git", "hooks");
     repo.write("scripts/hook.sh", renderStub("pre-commit"));
@@ -114,7 +194,15 @@ describe("installHooks", () => {
       join(hooksDir, "pre-commit"),
     );
 
-    expect(installHooks(hooksDir).foreign).toEqual(["pre-commit"]);
+    expect(installHooks(hooksDir).foreign).toEqual([
+      { hook: "pre-commit", reason: "not-chained" },
+    ]);
+    expect(installHooks(hooksDir, { chain: true }).chained).toEqual([
+      "pre-commit",
+    ]);
+    expect(
+      lstatSync(join(hooksDir, "pre-commit.pre-ward")).isSymbolicLink(),
+    ).toBe(true);
   });
 
   it("creates a missing hooks dir", () => {

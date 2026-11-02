@@ -29,7 +29,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 - [x] **W8** `hooks/stub`: stub template with `ward:managed` marker
 - [x] **W9** `ward` (no args, used as `"prepare": "ward"`): write stubs for all hooks, chmod +x
 - [x] **W10** Install is a no-op outside a git repo and in CI
-- [ ] **W40** Existing foreign hooks: back up to `<hook>.pre-ward` and chain (ARCHITECTURE "Existing hooks")
+- [x] **W40** Existing foreign hooks: ask (TTY) or `--chain`, then back up to `<hook>.pre-ward` and chain (ARCHITECTURE "Existing hooks")
 - [ ] **W41** `core.hooksPath` set → clear warning / `--respect-hooks-path`
 - [ ] **W42** Install `--force`
 - [ ] **W19** `ward uninstall`: remove only stubs with marker
@@ -192,4 +192,6 @@ Retired: W62 (task `env` / `cwd` - `cwd` became `root` in W59).
 
 ## Open questions
 
-- Stub chaining for foreign hooks by default, or refuse and ask? (decide before W40)
+None right now.
+
+Decided: foreign hooks are never chained silently - Ward asks in a terminal, otherwise leaves them and suggests `--chain` (W40).

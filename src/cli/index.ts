@@ -3,23 +3,26 @@ import { parseArgs } from "node:util";
 
 // Commands are imported lazily to keep startup fast (W49).
 async function main(argv: string[]): Promise<number> {
-  const { positionals } = parseArgs({
+  if (argv[0] === "run") {
+    // Hook args from git are passed through as is, so they are not parsed here.
+    // No config loading yet (W11-W15), so no hook has tasks: exit 0 instead of
+    // blocking git with "unknown command" right after install.
+    return 0;
+  }
+
+  const { positionals, values } = parseArgs({
     args: argv,
     allowPositionals: true,
     strict: true,
-    options: {},
+    options: {
+      chain: { type: "boolean" },
+    },
   });
   const [command] = positionals;
 
   if (command === undefined) {
     const { install } = await import("./install.ts");
-    return install();
-  }
-
-  if (command === "run") {
-    // No config loading yet (W11-W15), so no hook has tasks: exit 0 instead of
-    // blocking git with "unknown command" right after install.
-    return 0;
+    return install({ chain: values.chain ?? false });
   }
 
   console.error(`ward: unknown command "${command}"`);

@@ -219,10 +219,14 @@ Edge cases to cover with tests: binary files, renames, deleted files, merge in p
 
 ### Existing hooks
 
-On install, if a hook file exists **without** the marker:
+On install, if a hook file exists **without** the marker, Ward never overwrites it silently: users may not know the hook is there (git-lfs, an old husky setup, a hand-written script).
 
-- Default: rename to `<hook>.pre-ward` and chain it from the stub.
+- Interactive (`npx ward` in a terminal: stdin and stdout are a TTY): Ward lists the hooks and asks whether to keep them. Yes → rename to `<hook>.pre-ward` and chain it from the stub.
+- Non-interactive (`prepare` under most package managers, IDEs): the hook is left as is, Ward prints a warning with the command to chain it and exits 0, so `npm install` doesn't fail.
+- `--chain`: chain without asking.
 - `--force`: overwrite.
+
+A chained hook runs first with the same arguments; if it fails, git stops and Ward does not run. Hooks that read stdin (`pre-push`, `post-rewrite`) get a copy of it, and so does Ward. An existing `<hook>.pre-ward` is never overwritten. Directories in place of a hook are left as is.
 
 If `core.hooksPath` is set, git ignores `.git/hooks` → print a clear warning and exit non-zero (unless `--respect-hooks-path`, which installs there instead). `ward doctor` reports the same, plus leftovers from husky, lefthook and simple-git-hooks.
 
