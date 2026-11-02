@@ -12,6 +12,8 @@ import { dirname, join } from "node:path";
 export type TempRepo = {
   /** Absolute path to the repo root (symlinks and Windows short names resolved). */
   dir: string;
+  /** Isolated git env (no global/system config); pass it to code under test that spawns git. */
+  env: NodeJS.ProcessEnv;
   /** Run git in the repo and return trimmed stdout. */
   git: (...args: string[]) => string;
   /** Write a file relative to the repo root, creating parent dirs. */
@@ -35,7 +37,7 @@ export function createTempRepo({ init = true }: Options = {}): TempRepo {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ward-test-")));
 
   // Isolate from the developer's global/system git config (hooksPath, signing, templates).
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_CONFIG_GLOBAL: join(dir, ".gitconfig-global"),
     GIT_CONFIG_NOSYSTEM: "1",
@@ -67,6 +69,7 @@ export function createTempRepo({ init = true }: Options = {}): TempRepo {
 
   return {
     dir,
+    env,
     git,
     write,
     commit,
