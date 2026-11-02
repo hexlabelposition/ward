@@ -103,7 +103,8 @@ The hooks directory is resolved with `git rev-parse --git-path hooks` - never ha
 #!/bin/sh
 # ward:managed v1
 [ "$WARD" = "0" ] && exit 0
-bin="$(git rev-parse --show-toplevel)/node_modules/.bin/ward"
+bin=node_modules/.bin/ward        # git runs hooks from the repo root
+[ -f "$bin" ] || { echo "ward: $bin not found, skipping" >&2; exit 0; }
 case "${WARD_RUNTIME:-node}" in   # default = runtime that ran install
   bun)  exec bun "$bin" run pre-commit "$@" ;;
   deno) exec deno run -A npm:@hexlabelposition/ward run pre-commit "$@" ;;
@@ -114,7 +115,8 @@ esac
 Because the config is read on every run, adding/removing hooks in the config needs no reinstall. When the stub format or the active-hooks cache gets out of date (new Ward version, config changed), `ward run` rewrites the stubs itself, so users never have to reinstall by hand.
 
 - `# ward:managed v1` - marker used by `uninstall` and for upgrade detection.
-- Calls the local binary directly, not `npx` / `bunx` (much faster startup).
+- Calls the local binary directly, not `npx` / `bunx` (much faster startup). The path is relative: git runs hooks from the root of the working tree, so no `git rev-parse` is needed.
+- Missing binary (dependencies not installed yet) → warning and exit 0, so git is not blocked.
 - Each clone writes its own stubs, so team members on different runtimes don't conflict.
 
 ### Fast no-op path
