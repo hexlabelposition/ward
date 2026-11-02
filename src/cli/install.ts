@@ -2,16 +2,42 @@ import { existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { getRepoPaths } from "../git/paths.ts";
 import { installHooks } from "../hooks/install.ts";
+import { isErrnoCode } from "../util/errors.ts";
 
 const BIN = join("node_modules", ".bin", "ward");
 
-/** `ward` with no arguments, run from `"prepare": "ward"`. Returns the exit code. */
-export function install(cwd = process.cwd()): number {
-  const paths = getRepoPaths({ cwd });
+export type InstallOptions = {
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+};
+
+/**
+ * `ward` with no arguments, run from `"prepare": "ward"`. Returns the exit code.
+ *
+ * A no-op (exit 0) in CI, outside a git working tree and without git installed,
+ * so `npm install` in CI and Docker never fails because of hooks.
+ */
+export function install({
+  cwd = process.cwd(),
+  env = process.env,
+}: InstallOptions = {}): number {
+  // Checked first: no git process at all in CI.
+  if (isCI(env)) {
+    console.log("ward: CI detected, skipping hooks install");
+    return 0;
+  }
+
+  let paths;
+  try {
+    paths = getRepoPaths({ cwd, env });
+  } catch (error) {
+    if (!isErrnoCode(error, "ENOENT")) throw error;
+    console.log("ward: git not found, skipping hooks install");
+    return 0;
+  }
   if (!paths) {
-    // W10 turns this into a silent no-op.
-    console.error("ward: not inside a git working tree, hooks not installed");
-    return 1;
+    console.log("ward: not inside a git working tree, skipping hooks install");
+    return 0;
   }
 
   // `--git-path hooks` follows `core.hooksPath`: don't write stubs into a
@@ -45,6 +71,14 @@ export function install(cwd = process.cwd()): number {
         : ` (${String(written)} updated)`;
   console.log(`ward: ${String(total)} hooks installed in ${where}${note}`);
   return 0;
+}
+
+/** `CI` is set by GitHub Actions, GitLab, CircleCI, Travis, Buildkite, Azure Pipelines and others. */
+function isCI(env: NodeJS.ProcessEnv): boolean {
+  const value = env.CI?.trim().toLowerCase();
+  return (
+    value !== undefined && value !== "" && value !== "0" && value !== "false"
+  );
 }
 
 /**

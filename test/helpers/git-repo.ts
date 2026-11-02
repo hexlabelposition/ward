@@ -47,6 +47,9 @@ export function createTempRepo({ init = true }: Options = {}): TempRepo {
     GIT_COMMITTER_EMAIL: "test@ward.invalid",
   };
 
+  // Tests run on CI runners, where install would skip itself (W10).
+  delete env.CI;
+
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: dir, env, encoding: "utf8" }).trim();
 

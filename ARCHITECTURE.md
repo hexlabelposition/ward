@@ -254,7 +254,7 @@ With `cache: true`, Ward stores content hashes of files that passed a task in `.
 - No autofix: tasks run, Ward prints `git diff` of what they changed, restores the tree and fails if anything changed.
 - When `GITHUB_ACTIONS=true`, failures are also printed as `::error file=…,line=…::` annotations.
 
-`ward` (install) stays a no-op when `CI=true` or outside a git repo, so `npm install` in Docker/CI doesn't fail.
+`ward` (install) stays a no-op when `CI` is set (not `0` / `false`), outside a git working tree, or when git is not installed, so `npm install` in Docker/CI doesn't fail.
 
 ### Report
 

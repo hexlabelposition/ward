@@ -9,6 +9,7 @@ import {
 import { join } from "node:path";
 import { HOOKS, type HookName } from "./list.ts";
 import { isManagedStub, renderStub, type StubOptions } from "./stub.ts";
+import { isErrnoCode } from "../util/errors.ts";
 
 export type InstallResult = {
   /** Stubs created or rewritten (new hook, or an older / edited ward stub). */
@@ -72,8 +73,4 @@ function writeStub(file: string, stub: string) {
   writeFileSync(tmp, stub, { mode: 0o755 });
   chmodSync(tmp, 0o755); // `mode` is masked by umask
   renameSync(tmp, file);
-}
-
-function isErrnoCode(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && error.code === code;
 }

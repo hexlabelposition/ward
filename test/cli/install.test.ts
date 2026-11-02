@@ -89,12 +89,63 @@ describe("ward (install)", () => {
       false,
     );
   });
+});
 
-  it("fails outside a git repo", () => {
+describe("ward (install no-op)", () => {
+  it("skips outside a git repo", () => {
     using dir = createTempRepo({ init: false });
     dir.env.GIT_CEILING_DIRECTORIES = resolve(dir.dir, "..");
 
-    expect(ward(dir).status).toBe(1);
+    const { status, stdout } = ward(dir);
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("not inside a git working tree");
+  });
+
+  it("skips inside the git dir", () => {
+    using repo = createTempRepo();
+
+    expect(ward(repo, [], join(repo.dir, ".git")).status).toBe(0);
+    expect(existsSync(join(repo.dir, ".git", "hooks", "pre-commit"))).toBe(
+      false,
+    );
+  });
+
+  it("skips when git is not installed", () => {
+    using repo = createTempRepo();
+    // Windows spells it `Path`; drop every casing so git can't be found.
+    const env = Object.fromEntries(
+      Object.entries(repo.env).filter(([key]) => key.toUpperCase() !== "PATH"),
+    );
+    env.PATH = join(repo.dir, "no-bin");
+
+    const { status, stdout } = ward({ ...repo, env });
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("git not found");
+  });
+
+  it.each(["true", "1", "True", "yes"])("skips in CI (CI=%s)", (value) => {
+    using repo = createTempRepo();
+    repo.env.CI = value;
+
+    const { status, stdout } = ward(repo);
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("CI detected");
+    expect(existsSync(join(repo.dir, ".git", "hooks", "pre-commit"))).toBe(
+      false,
+    );
+  });
+
+  it.each(["", "0", "false", "FALSE"])("installs when CI=%j", (value) => {
+    using repo = createTempRepo();
+    repo.env.CI = value;
+
+    expect(ward(repo).status).toBe(0);
+    expect(existsSync(join(repo.dir, ".git", "hooks", "pre-commit"))).toBe(
+      true,
+    );
   });
 });
 
