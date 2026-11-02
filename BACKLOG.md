@@ -19,7 +19,7 @@ An empty project that builds, lints and tests.
 Replace husky.
 
 - [x] **W6** `git/paths`: resolve repo root and hooks dir via `git rev-parse`
-- [ ] **W7** `hooks/list`: list of all supported git hook names
+- [x] **W7** `hooks/list`: list of all supported git hook names
 - [ ] **W8** `hooks/stub`: stub template with `ward:managed` marker
 - [ ] **W9** `ward` (no args, used as `"prepare": "ward"`): write stubs for all hooks, chmod +x
 - [ ] **W10** Install is a no-op outside a git repo and in CI
