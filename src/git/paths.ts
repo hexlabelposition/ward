@@ -6,6 +6,8 @@ export type RepoPaths = {
   root: string;
   /** Absolute path to the git dir of this worktree (`.git`, or `.git/worktrees/<name>`). */
   gitDir: string;
+  /** Absolute path to the git dir shared by all worktrees (the main `.git`). */
+  commonDir: string;
   /**
    * Absolute path to the hooks dir, as git resolves it: shared by all worktrees,
    * honors `core.hooksPath`.
@@ -25,7 +27,14 @@ export function getRepoPaths(options: GitOptions = {}): RepoPaths | null {
   let out: string;
   try {
     out = git(
-      ["rev-parse", "--show-toplevel", "--git-dir", "--git-path", "hooks"],
+      [
+        "rev-parse",
+        "--show-toplevel",
+        "--git-dir",
+        "--git-common-dir",
+        "--git-path",
+        "hooks",
+      ],
       { ...options, cwd },
     );
   } catch (error) {
@@ -34,14 +43,15 @@ export function getRepoPaths(options: GitOptions = {}): RepoPaths | null {
     throw error;
   }
 
-  const [root, gitDir, hooksDir] = out.split(/\r?\n/);
-  if (!root || !gitDir || !hooksDir) return null;
+  const [root, gitDir, commonDir, hooksDir] = out.split(/\r?\n/);
+  if (!root || !gitDir || !commonDir || !hooksDir) return null;
 
-  // `--git-dir` and `--git-path` may be relative to cwd; `resolve` also turns
+  // `--git-dir`, `--git-common-dir` and `--git-path` may be relative to cwd; `resolve` also turns
   // git's `C:/…` into native separators on Windows.
   return {
     root: resolve(root),
     gitDir: resolve(cwd, gitDir),
+    commonDir: resolve(cwd, commonDir),
     hooksDir: resolve(cwd, hooksDir),
   };
 }

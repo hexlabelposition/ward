@@ -11,6 +11,7 @@ describe("getRepoPaths", () => {
     expect(getRepoPaths({ cwd: repo.dir, env: repo.env })).toEqual({
       root: repo.dir,
       gitDir: join(repo.dir, ".git"),
+      commonDir: join(repo.dir, ".git"),
       hooksDir: join(repo.dir, ".git", "hooks"),
     });
   });
@@ -23,6 +24,7 @@ describe("getRepoPaths", () => {
     expect(getRepoPaths({ cwd: sub, env: repo.env })).toEqual({
       root: repo.dir,
       gitDir: join(repo.dir, ".git"),
+      commonDir: join(repo.dir, ".git"),
       hooksDir: join(repo.dir, ".git", "hooks"),
     });
   });
@@ -36,6 +38,7 @@ describe("getRepoPaths", () => {
     expect(getRepoPaths({ cwd: wt, env: repo.env })).toEqual({
       root: wt,
       gitDir: join(repo.dir, ".git", "worktrees", "wt"),
+      commonDir: join(repo.dir, ".git"),
       hooksDir: join(repo.dir, ".git", "hooks"),
     });
   });
