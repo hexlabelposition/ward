@@ -1,7 +1,8 @@
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { isErrnoCode } from "../util/errors.ts";
 import { ConfigError } from "./errors.ts";
+import { getWardKey, readPackageJson } from "./load-pkg.ts";
 
 export type ConfigFormat = "ts" | "yaml" | "package";
 
@@ -58,19 +59,5 @@ function isFile(file: string): boolean {
 }
 
 function hasWardKey(file: string): boolean {
-  if (!isFile(file)) return false;
-  let pkg: unknown;
-  try {
-    // npm accepts a BOM, JSON.parse doesn't.
-    pkg = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-    throw new ConfigError(`package.json is not valid JSON: ${error.message}`);
-  }
-  return (
-    typeof pkg === "object" &&
-    pkg !== null &&
-    !Array.isArray(pkg) &&
-    Object.hasOwn(pkg, "ward")
-  );
+  return isFile(file) && getWardKey(readPackageJson(file)) !== undefined;
 }

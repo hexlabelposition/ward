@@ -41,6 +41,7 @@ src/
 ├─ cli/            # argument parsing, commands: (default) install, init, run, doctor, migrate, uninstall
 ├─ config/
 │  ├─ discover.ts  # find ward.config.ts → ward.{yml,yaml} → package.json; error on several
+│  ├─ load.ts      # pick the loader by format, imported lazily
 │  ├─ load-ts.ts   # native import() with Node type stripping
 │  ├─ load-yml.ts  # load YAML (yaml package)
 │  ├─ load-pkg.ts  # "ward" section of package.json
@@ -142,6 +143,8 @@ If `MERGE_HEAD`, `rebase-merge/` or `rebase-apply/` exists in the git dir, `ward
 | `ward.config.ts`    | native `import()` (Node / Bun / Deno) |
 | `ward.yml`, `.yaml` | `yaml`                                |
 | `package.json`      | `JSON.parse`, `"ward"` key            |
+
+Loaders return raw data; validation and normalization come after. A TS config must have a default export; syntax Node can't strip (`enum`, `namespace`, parameter properties) fails with the line and a hint. An empty `ward.yml` is an empty config; duplicate keys and several YAML documents are errors.
 
 Discovery order: `ward.config.ts` → `ward.yml` / `ward.yaml` → `package.json`. If several sources exist → error, not a silent pick. Only the repo root is searched, never parent or package dirs: one config per repo. `package.json` counts only when it has a `"ward"` key. No config means no tasks: every hook is a no-op.
 
