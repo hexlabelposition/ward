@@ -29,6 +29,7 @@ describe("installHooks", () => {
       written: [...HOOKS],
       unchanged: [],
       chained: [],
+      overwritten: [],
       foreign: [],
     });
     for (const hook of HOOKS) {
@@ -66,6 +67,7 @@ describe("installHooks", () => {
       written: [],
       unchanged: [...HOOKS],
       chained: [],
+      overwritten: [],
       foreign: [],
     });
   });
@@ -203,6 +205,71 @@ describe("installHooks", () => {
     expect(
       lstatSync(join(hooksDir, "pre-commit.pre-ward")).isSymbolicLink(),
     ).toBe(true);
+  });
+
+  it("overwrites foreign hooks with force", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    writeFileSync(join(hooksDir, "pre-commit"), "#!/bin/sh\nnpx lint-staged\n");
+
+    const result = installHooks(hooksDir, { force: true });
+
+    expect(result.overwritten).toEqual(["pre-commit"]);
+    expect(result.written).toContain("pre-commit");
+    expect(result.foreign).toEqual([]);
+    expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(
+      renderStub("pre-commit"),
+    );
+    expect(existsSync(join(hooksDir, "pre-commit.pre-ward"))).toBe(false);
+  });
+
+  it("prefers chaining over overwriting with chain and force", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    writeFileSync(join(hooksDir, "pre-commit"), "foreign\n");
+    writeFileSync(join(hooksDir, "pre-push"), "new foreign\n");
+    writeFileSync(join(hooksDir, "pre-push.pre-ward"), "old backup\n");
+
+    const result = installHooks(hooksDir, { chain: true, force: true });
+
+    expect(result.chained).toEqual(["pre-commit"]);
+    expect(result.overwritten).toEqual(["pre-push"]);
+    expect(result.foreign).toEqual([]);
+    expect(readFileSync(join(hooksDir, "pre-push.pre-ward"), "utf8")).toBe(
+      "old backup\n",
+    );
+    expect(readFileSync(join(hooksDir, "pre-push"), "utf8")).toBe(
+      renderStub("pre-push"),
+    );
+  });
+
+  it("leaves a directory in place of a hook as is with force", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    mkdirSync(join(hooksDir, "commit-msg"));
+
+    expect(installHooks(hooksDir, { force: true }).foreign).toEqual([
+      { hook: "commit-msg", reason: "not-a-file" },
+    ]);
+    expect(lstatSync(join(hooksDir, "commit-msg")).isDirectory()).toBe(true);
+  });
+
+  posixOnly("replaces a symlinked hook, not its target, with force", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    repo.write("scripts/hook.sh", "#!/bin/sh\necho mine\n");
+    symlinkSync(
+      join(repo.dir, "scripts/hook.sh"),
+      join(hooksDir, "pre-commit"),
+    );
+
+    expect(installHooks(hooksDir, { force: true }).overwritten).toEqual([
+      "pre-commit",
+    ]);
+    expect(lstatSync(join(hooksDir, "pre-commit")).isFile()).toBe(true);
+    expect(readFileSync(join(repo.dir, "scripts/hook.sh"), "utf8")).toBe(
+      "#!/bin/sh\necho mine\n",
+    );
   });
 
   it("creates a missing hooks dir", () => {

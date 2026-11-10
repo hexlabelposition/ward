@@ -24,6 +24,8 @@ export type InstallOptions = {
    * one shared with other repos.
    */
   respectHooksPath?: boolean;
+  /** `--force`: replace foreign hooks with stubs, without asking. */
+  force?: boolean;
   /**
    * Asks whether to chain the foreign hooks. Default: a y/N prompt when stdin
    * and stdout are a TTY; `null` when there is nobody to ask (`prepare` under
@@ -43,6 +45,7 @@ export async function install({
   env = process.env,
   chain = false,
   respectHooksPath = false,
+  force = false,
   confirm = defaultConfirm(),
 }: InstallOptions = {}): Promise<number> {
   // Checked first: no git process at all in CI.
@@ -75,7 +78,7 @@ export async function install({
   }
 
   const where = toPosix(relative(paths.root, paths.hooksDir));
-  if (!chain && confirm) {
+  if (!chain && !force && confirm) {
     const foreign = findForeignHooks(paths.hooksDir);
     if (foreign.length > 0) chain = await confirm(foreign, where);
   }
@@ -84,6 +87,7 @@ export async function install({
   const result = installHooks(paths.hooksDir, {
     bin: toPosix(relative(paths.root, bin)),
     chain,
+    force,
   });
 
   const rerun = respectHooksPath ? "npx ward --respect-hooks-path" : "npx ward";
@@ -98,14 +102,20 @@ function report(result: InstallResult, where: string, rerun: string) {
       `ward: kept existing ${hook} as ${hook}${CHAINED_SUFFIX}, it runs before ward`,
     );
   }
+  if (result.overwritten.length > 0) {
+    console.warn(
+      `ward: replaced hooks not installed by ward: ${result.overwritten.join(", ")}`,
+    );
+  }
 
   const skipped = result.foreign.filter((f) => f.reason === "not-chained");
   if (skipped.length > 0) {
     const names = skipped.map((f) => f.hook).join(", ");
     console.warn(
       `ward: hooks not installed by ward found in ${where}: ${names}\n` +
-        "ward: left as is, so ward won't run for them. To keep them and run ward after them:\n" +
-        `ward:   ${rerun} --chain`,
+        "ward: left as is, so ward won't run for them. To fix:\n" +
+        `ward:   ${rerun} --chain   # keep them, run ward after them\n` +
+        `ward:   ${rerun} --force   # replace them with ward's hooks`,
     );
   }
   for (const { hook, reason } of result.foreign) {
@@ -114,7 +124,7 @@ function report(result: InstallResult, where: string, rerun: string) {
     } else if (reason === "backup-exists") {
       console.warn(
         `ward: ${hook} left as is: ${hook}${CHAINED_SUFFIX} already exists. ` +
-          "Remove one of them and reinstall.",
+          `Remove one of them and reinstall, or replace ${hook}: ${rerun} --chain --force`,
       );
     }
   }

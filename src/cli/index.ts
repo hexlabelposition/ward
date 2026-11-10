@@ -16,6 +16,7 @@ async function main(argv: string[]): Promise<number> {
     strict: true,
     options: {
       chain: { type: "boolean" },
+      force: { type: "boolean" },
       "respect-hooks-path": { type: "boolean" },
     },
   });
@@ -26,6 +27,7 @@ async function main(argv: string[]): Promise<number> {
     return install({
       chain: values.chain ?? false,
       respectHooksPath: values["respect-hooks-path"] ?? false,
+      force: values.force ?? false,
     });
   }
 

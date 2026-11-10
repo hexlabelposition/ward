@@ -76,6 +76,7 @@ describe("ward (install)", () => {
       "hooks not installed by ward found in .git/hooks: pre-commit",
     );
     expect(stderr).toContain("npx ward --chain");
+    expect(stderr).toContain("npx ward --force");
     expect(hook(repo, "pre-commit")).toBe("#!/bin/sh\necho mine\n");
   });
 
@@ -89,6 +90,33 @@ describe("ward (install)", () => {
     expect(stdout).toContain("kept existing pre-commit as pre-commit.pre-ward");
     expect(hook(repo, "pre-commit.pre-ward")).toBe("#!/bin/sh\necho mine\n");
     expect(hook(repo, "pre-commit")).toContain("# ward:managed");
+  });
+
+  it("replaces foreign hooks with --force", () => {
+    using repo = createTempRepo();
+    repo.write(".git/hooks/pre-commit", "#!/bin/sh\necho mine\n");
+
+    const { status, stderr } = ward(repo, ["--force"]);
+
+    expect(status).toBe(0);
+    expect(stderr).toContain(
+      "replaced hooks not installed by ward: pre-commit",
+    );
+    expect(hook(repo, "pre-commit")).toContain("# ward:managed");
+    expect(existsSync(join(repo.dir, ".git/hooks/pre-commit.pre-ward"))).toBe(
+      false,
+    );
+  });
+
+  it("suggests --chain --force when the backup is taken", () => {
+    using repo = createTempRepo();
+    repo.write(".git/hooks/pre-commit", "new\n");
+    repo.write(".git/hooks/pre-commit.pre-ward", "old\n");
+
+    const { stderr } = ward(repo, ["--chain"]);
+
+    expect(stderr).toContain("pre-commit.pre-ward already exists");
+    expect(stderr).toContain("npx ward --chain --force");
   });
 
   it("refuses to install when core.hooksPath is set", () => {

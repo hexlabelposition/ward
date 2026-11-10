@@ -62,4 +62,18 @@ describe("install (confirm)", () => {
     await install({ cwd: repo.dir, env: repo.env, confirm, chain: true });
     expect(confirm).not.toHaveBeenCalled();
   });
+
+  it("does not ask with --force", async () => {
+    quiet();
+    using repo = createTempRepo();
+    repo.write(".git/hooks/commit-msg", "foreign\n");
+    const confirm = vi.fn(() => Promise.resolve(true));
+
+    await install({ cwd: repo.dir, env: repo.env, confirm, force: true });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(
+      readFileSync(join(repo.dir, ".git/hooks/commit-msg"), "utf8"),
+    ).toContain("# ward:managed");
+  });
 });

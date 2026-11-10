@@ -224,7 +224,7 @@ On install, if a hook file exists **without** the marker, Ward never overwrites 
 - Interactive (`npx ward` in a terminal: stdin and stdout are a TTY): Ward lists the hooks and asks whether to keep them. Yes → rename to `<hook>.pre-ward` and chain it from the stub.
 - Non-interactive (`prepare` under most package managers, IDEs): the hook is left as is, Ward prints a warning with the command to chain it and exits 0, so `npm install` doesn't fail.
 - `--chain`: chain without asking.
-- `--force`: overwrite.
+- `--force`: overwrite without asking; the old hook is lost. With `--chain`, only hooks that can't be chained (`<hook>.pre-ward` taken) are overwritten.
 
 A chained hook runs first with the same arguments; if it fails, git stops and Ward does not run. Hooks that read stdin (`pre-push`, `post-rewrite`) get a copy of it, and so does Ward. An existing `<hook>.pre-ward` is never overwritten. Directories in place of a hook are left as is.
 

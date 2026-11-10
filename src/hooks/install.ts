@@ -23,13 +23,19 @@ export type InstallOptions = StubOptions & {
    * Off by default: users may not know a hook is there, so they opt in.
    */
   chain?: boolean;
+  /**
+   * Replace foreign hooks with stubs; their content is lost. With `chain`,
+   * only hooks that can't be chained (`<hook>.pre-ward` taken) are replaced.
+   * Directories are left as is either way.
+   */
+  force?: boolean;
 };
 
 export type ForeignHook = {
   hook: HookName;
   /**
    * Why it was left as is:
-   * - `not-chained`: chaining was not requested
+   * - `not-chained`: neither chaining nor overwriting was requested
    * - `not-a-file`: a directory or other special file, can't be chained
    * - `backup-exists`: `<hook>.pre-ward` is already taken
    */
@@ -43,6 +49,8 @@ export type InstallResult = {
   unchanged: HookName[];
   /** Foreign hooks moved to `<hook>.pre-ward`; their stubs are in `written`. */
   chained: HookName[];
+  /** Foreign hooks replaced by stubs (`force`); their stubs are in `written`. */
+  overwritten: HookName[];
   /** Foreign hooks left as is: ward does not run for these hooks. */
   foreign: ForeignHook[];
 };
@@ -56,16 +64,17 @@ export function findForeignHooks(hooksDir: string): HookName[] {
 
 /**
  * Write a ward stub for every supported hook into `hooksDir`. Foreign hooks
- * are never overwritten: they are left as is, or chained with `chain: true`.
+ * are left as is unless `chain` or `force` says otherwise.
  */
 export function installHooks(
   hooksDir: string,
-  { chain = false, ...stubOptions }: InstallOptions = {},
+  { chain = false, force = false, ...stubOptions }: InstallOptions = {},
 ): InstallResult {
   const result: InstallResult = {
     written: [],
     unchanged: [],
     chained: [],
+    overwritten: [],
     foreign: [],
   };
   mkdirSync(hooksDir, { recursive: true });
@@ -76,14 +85,18 @@ export function installHooks(
     const current = readExisting(file);
 
     if (current.kind === "foreign") {
-      const reason = foreignReason(file, chain, current.chainable);
-      if (reason) {
-        result.foreign.push({ hook, reason });
+      const action = foreignAction(file, current.chainable, { chain, force });
+      if (action === "chain") {
+        // rename keeps the content, mode and symlinks exactly as they were.
+        renameSync(file, file + CHAINED_SUFFIX);
+        result.chained.push(hook);
+      } else if (action === "overwrite") {
+        // writeStub renames over the file: a symlink is replaced, its target kept.
+        result.overwritten.push(hook);
+      } else {
+        result.foreign.push({ hook, reason: action });
         continue;
       }
-      // rename keeps the content, mode and symlinks exactly as they were.
-      renameSync(file, file + CHAINED_SUFFIX);
-      result.chained.push(hook);
     } else if (current.kind === "ward" && current.content === stub) {
       chmodSync(file, 0o755); // content is right, the exec bit may have been lost
       result.unchanged.push(hook);
@@ -97,16 +110,19 @@ export function installHooks(
   return result;
 }
 
-/** Why a foreign hook must be left as is, or `null` if it can be chained. */
-function foreignReason(
+/** What to do with a foreign hook, or why it must be left as is. */
+function foreignAction(
   file: string,
-  chain: boolean,
   chainable: boolean,
-): ForeignHook["reason"] | null {
-  if (!chain) return "not-chained";
-  if (!chainable) return "not-a-file";
-  if (existsSync(file + CHAINED_SUFFIX)) return "backup-exists";
-  return null;
+  { chain, force }: { chain: boolean; force: boolean },
+): "chain" | "overwrite" | ForeignHook["reason"] {
+  // Not a regular file or symlink: a stub can't be renamed over a directory.
+  if (!chainable) return chain || force ? "not-a-file" : "not-chained";
+  if (chain) {
+    if (!existsSync(file + CHAINED_SUFFIX)) return "chain";
+    return force ? "overwrite" : "backup-exists";
+  }
+  return force ? "overwrite" : "not-chained";
 }
 
 type Existing =

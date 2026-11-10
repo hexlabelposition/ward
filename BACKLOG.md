@@ -31,7 +31,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 - [x] **W10** Install is a no-op outside a git repo and in CI
 - [x] **W40** Existing foreign hooks: ask (TTY) or `--chain`, then back up to `<hook>.pre-ward` and chain (ARCHITECTURE "Existing hooks")
 - [x] **W41** `core.hooksPath` set → clear warning / `--respect-hooks-path`
-- [ ] **W42** Install `--force`
+- [x] **W42** Install `--force`
 - [ ] **W19** `ward uninstall`: remove only stubs with marker
 
 ### Config
