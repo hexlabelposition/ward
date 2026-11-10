@@ -32,7 +32,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 - [x] **W40** Existing foreign hooks: ask (TTY) or `--chain`, then back up to `<hook>.pre-ward` and chain (ARCHITECTURE "Existing hooks")
 - [x] **W41** `core.hooksPath` set → clear warning / `--respect-hooks-path`
 - [x] **W42** Install `--force`
-- [ ] **W19** `ward uninstall`: remove only stubs with marker
+- [x] **W19** `ward uninstall`: remove only stubs with marker
 
 ### Config
 

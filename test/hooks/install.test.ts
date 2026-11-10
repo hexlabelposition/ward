@@ -11,7 +11,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findForeignHooks, installHooks } from "../../src/hooks/install.ts";
+import {
+  findForeignHooks,
+  installHooks,
+  uninstallHooks,
+} from "../../src/hooks/install.ts";
 import { HOOKS } from "../../src/hooks/list.ts";
 import { renderStub } from "../../src/hooks/stub.ts";
 import { createTempRepo } from "../helpers/git-repo.ts";
@@ -298,5 +302,91 @@ describe("installHooks", () => {
     installHooks(hooksDir);
 
     expect(existsSync(join(hooksDir, "pre-commit"))).toBe(true);
+  });
+});
+
+describe("uninstallHooks", () => {
+  it("removes ward stubs and leaves other files", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    installHooks(hooksDir);
+    writeFileSync(join(hooksDir, "pre-commit"), "foreign\n");
+
+    const result = uninstallHooks(hooksDir);
+
+    expect(result).toEqual({
+      removed: HOOKS.filter((hook) => hook !== "pre-commit"),
+      restored: [],
+      backupKept: [],
+    });
+    expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(
+      "foreign\n",
+    );
+    expect(existsSync(join(hooksDir, "pre-push"))).toBe(false);
+    expect(existsSync(join(hooksDir, "pre-push.sample"))).toBe(true);
+  });
+
+  it("restores chained hooks", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    writeFileSync(join(hooksDir, "pre-push"), "#!/bin/sh\ngit lfs pre-push\n");
+    installHooks(hooksDir, { chain: true });
+
+    const result = uninstallHooks(hooksDir);
+
+    expect(result.restored).toEqual(["pre-push"]);
+    expect(readFileSync(join(hooksDir, "pre-push"), "utf8")).toBe(
+      "#!/bin/sh\ngit lfs pre-push\n",
+    );
+    expect(existsSync(join(hooksDir, "pre-push.pre-ward"))).toBe(false);
+  });
+
+  it("restores a backup whose stub was deleted", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    writeFileSync(join(hooksDir, "pre-push.pre-ward"), "mine\n");
+
+    expect(uninstallHooks(hooksDir).restored).toEqual(["pre-push"]);
+    expect(readFileSync(join(hooksDir, "pre-push"), "utf8")).toBe("mine\n");
+  });
+
+  it("keeps the backup when the hook is foreign", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    writeFileSync(join(hooksDir, "pre-push"), "new\n");
+    writeFileSync(join(hooksDir, "pre-push.pre-ward"), "old\n");
+
+    expect(uninstallHooks(hooksDir)).toEqual({
+      removed: [],
+      restored: [],
+      backupKept: ["pre-push"],
+    });
+    expect(readFileSync(join(hooksDir, "pre-push"), "utf8")).toBe("new\n");
+    expect(readFileSync(join(hooksDir, "pre-push.pre-ward"), "utf8")).toBe(
+      "old\n",
+    );
+  });
+
+  posixOnly("leaves a symlink to a ward stub", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    repo.write("scripts/hook.sh", renderStub("pre-commit"));
+    symlinkSync(
+      join(repo.dir, "scripts/hook.sh"),
+      join(hooksDir, "pre-commit"),
+    );
+
+    expect(uninstallHooks(hooksDir).removed).toEqual([]);
+    expect(lstatSync(join(hooksDir, "pre-commit")).isSymbolicLink()).toBe(true);
+  });
+
+  it("does nothing for a missing dir", () => {
+    using repo = createTempRepo();
+
+    expect(uninstallHooks(join(repo.dir, "nope"))).toEqual({
+      removed: [],
+      restored: [],
+      backupKept: [],
+    });
   });
 });

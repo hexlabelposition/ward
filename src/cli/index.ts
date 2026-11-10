@@ -31,6 +31,22 @@ async function main(argv: string[]): Promise<number> {
     });
   }
 
+  if (command === "uninstall") {
+    // The options above are install flags.
+    const extra = [
+      ...positionals.slice(1),
+      ...Object.keys(values).map((k) => `--${k}`),
+    ];
+    if (extra.length > 0) {
+      console.error(
+        `ward uninstall: unexpected argument "${String(extra[0])}"`,
+      );
+      return 1;
+    }
+    const { uninstall } = await import("./uninstall.ts");
+    return uninstall();
+  }
+
   console.error(`ward: unknown command "${command}"`);
   return 1;
 }

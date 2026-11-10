@@ -230,6 +230,8 @@ A chained hook runs first with the same arguments; if it fails, git stops and Wa
 
 If `core.hooksPath` is set, git ignores `.git/hooks` → print a clear warning and exit non-zero (unless `--respect-hooks-path`, which installs there instead). The warning names the value and its config scope and gives the fix: the matching `git config [--global|--system|--worktree] --unset core.hooksPath`, or `--respect-hooks-path`. `--respect-hooks-path` only installs into a directory inside the working tree or the git dir: a directory outside (`~/.githooks`) is shared with other repos, and the working tree root would get a file per hook. `ward doctor` reports the same, plus leftovers from husky, lefthook and simple-git-hooks.
 
+`ward uninstall` removes only files with the marker (a symlink is never one) and moves each `<hook>.pre-ward` back to `<hook>`, unless `<hook>` is taken by a foreign hook - then both are left and Ward warns. It cleans the dir git runs hooks from and `.git/hooks`, since stubs stay there when `core.hooksPath` is set after install. Unlike install it is not a no-op in CI or outside a repo: it was asked for, so it fails instead of skipping silently.
+
 ### Task execution
 
 - Commands run through the system shell, cwd = repo root or the task's `root`.

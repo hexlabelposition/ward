@@ -226,7 +226,7 @@ function defaultConfirm(): InstallOptions["confirm"] {
   };
 }
 
-function toPosix(path: string): string {
+export function toPosix(path: string): string {
   return path.replaceAll("\\", "/");
 }
 

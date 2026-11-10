@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -104,6 +105,44 @@ export function installHooks(
 
     writeStub(file, stub);
     result.written.push(hook);
+  }
+
+  return result;
+}
+
+export type UninstallResult = {
+  /** Ward stubs that were removed. */
+  removed: HookName[];
+  /** Chained hooks moved back from `<hook>.pre-ward` to `<hook>`. */
+  restored: HookName[];
+  /** `<hook>.pre-ward` left in place: `<hook>` is taken by a foreign hook. */
+  backupKept: HookName[];
+};
+
+/**
+ * Remove ward stubs from `hooksDir` and put chained hooks back in their place.
+ * Files without the marker are never touched; a missing dir is not an error.
+ */
+export function uninstallHooks(hooksDir: string): UninstallResult {
+  const result: UninstallResult = { removed: [], restored: [], backupKept: [] };
+
+  for (const hook of HOOKS) {
+    const file = join(hooksDir, hook);
+    const current = readExisting(file);
+    if (current.kind === "ward") {
+      rmSync(file);
+      result.removed.push(hook);
+    }
+
+    const backup = file + CHAINED_SUFFIX;
+    if (!pathExists(backup)) continue;
+    // Also restores a backup whose stub was deleted by hand.
+    if (current.kind === "foreign") {
+      result.backupKept.push(hook);
+    } else {
+      renameSync(backup, file);
+      result.restored.push(hook);
+    }
   }
 
   return result;
