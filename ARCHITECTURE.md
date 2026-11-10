@@ -228,7 +228,7 @@ On install, if a hook file exists **without** the marker, Ward never overwrites 
 
 A chained hook runs first with the same arguments; if it fails, git stops and Ward does not run. Hooks that read stdin (`pre-push`, `post-rewrite`) get a copy of it, and so does Ward. An existing `<hook>.pre-ward` is never overwritten. Directories in place of a hook are left as is.
 
-If `core.hooksPath` is set, git ignores `.git/hooks` → print a clear warning and exit non-zero (unless `--respect-hooks-path`, which installs there instead). `ward doctor` reports the same, plus leftovers from husky, lefthook and simple-git-hooks.
+If `core.hooksPath` is set, git ignores `.git/hooks` → print a clear warning and exit non-zero (unless `--respect-hooks-path`, which installs there instead). The warning names the value and its config scope and gives the fix: the matching `git config [--global|--system|--worktree] --unset core.hooksPath`, or `--respect-hooks-path`. `--respect-hooks-path` only installs into a directory inside the working tree or the git dir: a directory outside (`~/.githooks`) is shared with other repos, and the working tree root would get a file per hook. `ward doctor` reports the same, plus leftovers from husky, lefthook and simple-git-hooks.
 
 ### Task execution
 

@@ -16,13 +16,17 @@ async function main(argv: string[]): Promise<number> {
     strict: true,
     options: {
       chain: { type: "boolean" },
+      "respect-hooks-path": { type: "boolean" },
     },
   });
   const [command] = positionals;
 
   if (command === undefined) {
     const { install } = await import("./install.ts");
-    return install({ chain: values.chain ?? false });
+    return install({
+      chain: values.chain ?? false,
+      respectHooksPath: values["respect-hooks-path"] ?? false,
+    });
   }
 
   console.error(`ward: unknown command "${command}"`);
