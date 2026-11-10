@@ -1,6 +1,5 @@
 import {
   chmodSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -119,10 +118,15 @@ function foreignAction(
   // Not a regular file or symlink: a stub can't be renamed over a directory.
   if (!chainable) return chain || force ? "not-a-file" : "not-chained";
   if (chain) {
-    if (!existsSync(file + CHAINED_SUFFIX)) return "chain";
+    if (!pathExists(file + CHAINED_SUFFIX)) return "chain";
     return force ? "overwrite" : "backup-exists";
   }
   return force ? "overwrite" : "not-chained";
+}
+
+/** Like `existsSync`, but a broken symlink counts as existing. */
+function pathExists(file: string): boolean {
+  return readExisting(file).kind !== "missing";
 }
 
 type Existing =

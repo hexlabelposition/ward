@@ -159,6 +159,25 @@ describe("installHooks", () => {
     );
   });
 
+  posixOnly("does not overwrite a broken symlink backup", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    symlinkSync(
+      join(repo.dir, "missing"),
+      join(hooksDir, "pre-commit.pre-ward"),
+    );
+    writeFileSync(join(hooksDir, "pre-commit"), "foreign\n");
+
+    const result = installHooks(hooksDir, { chain: true });
+
+    expect(result.foreign).toEqual([
+      { hook: "pre-commit", reason: "backup-exists" },
+    ]);
+    expect(
+      lstatSync(join(hooksDir, "pre-commit.pre-ward")).isSymbolicLink(),
+    ).toBe(true);
+  });
+
   it("keeps the chain on reinstall", () => {
     using repo = createTempRepo();
     const hooksDir = join(repo.dir, ".git", "hooks");
