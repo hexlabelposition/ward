@@ -143,7 +143,7 @@ If `MERGE_HEAD`, `rebase-merge/` or `rebase-apply/` exists in the git dir, `ward
 | `ward.yml`, `.yaml` | `yaml`                                |
 | `package.json`      | `JSON.parse`, `"ward"` key            |
 
-Discovery order: `ward.config.ts` → `ward.yml` / `ward.yaml` → `package.json`. If several sources exist → error, not a silent pick.
+Discovery order: `ward.config.ts` → `ward.yml` / `ward.yaml` → `package.json`. If several sources exist → error, not a silent pick. Only the repo root is searched, never parent or package dirs: one config per repo. `package.json` counts only when it has a `"ward"` key. No config means no tasks: every hook is a no-op.
 
 Merge order: `extends` packages (in listed order) → repo config → `ward.local.*`.
 
