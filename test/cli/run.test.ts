@@ -170,6 +170,23 @@ describe("ward run", () => {
     expect(stdout).toBe("a\n");
   });
 
+  it("expands {1}, {2} to the hook arguments", () => {
+    using repo = createTempRepo();
+    writeHook(repo, [
+      `${node("console.log(JSON.stringify(process.argv.slice(1)))")} {2} {1} {3}`,
+    ]);
+
+    const { status, stdout } = ward(repo, [
+      "run",
+      "pre-commit",
+      "msg file",
+      "second",
+    ]);
+
+    expect(status).toBe(0);
+    expect(JSON.parse(stdout)).toEqual(["second", "msg file"]);
+  });
+
   it("passes stdin to the task", () => {
     using repo = createTempRepo();
     writeHook(repo, [node("process.stdin.pipe(process.stdout)")]);
@@ -277,6 +294,20 @@ function commit(repo: TempRepo) {
 }
 
 describe("ward run from git", () => {
+  posixOnly("passes the commit message file as {1}", () => {
+    using repo = createTempRepo();
+    repo.write("ward.yml", "hooks:\n  commit-msg: grep -q init {1}\n");
+    installStubs(repo);
+
+    expect(commit(repo).status).toBe(0);
+
+    repo.write("ward.yml", "hooks:\n  commit-msg: grep -q other {1}\n");
+    const result = commit(repo);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("ward: commit-msg failed");
+  });
+
   posixOnly("blocks the commit when a task fails", () => {
     using repo = createTempRepo();
     repo.write("ward.yml", 'hooks:\n  pre-commit: ["true", exit 4]\n');

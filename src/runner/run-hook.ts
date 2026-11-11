@@ -1,10 +1,13 @@
 import type { Hook } from "../config/schema.ts";
 import type { HookName } from "../hooks/list.ts";
+import { expandArgs } from "./command.ts";
 import { execCommand } from "./exec.ts";
 
 export type RunHookOptions = {
   hook: HookName;
   tasks: Hook["tasks"];
+  /** Arguments git passed to the hook, for `{1}`, `{2}`. */
+  args?: readonly string[];
   /** Repo root: the working directory of every task. */
   root: string;
   env?: NodeJS.ProcessEnv;
@@ -18,11 +21,15 @@ export type RunHookOptions = {
 export async function runHook({
   hook,
   tasks,
+  args = [],
   root,
   env = process.env,
 }: RunHookOptions): Promise<number> {
   for (const task of tasks) {
-    const code = await execCommand(task.run, { cwd: root, env });
+    const code = await execCommand(expandArgs(task.run, args), {
+      cwd: root,
+      env,
+    });
     if (code !== 0) {
       console.error(
         `ward: ${hook} failed: ${task.name} (exit ${String(code)})`,

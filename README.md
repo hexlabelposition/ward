@@ -205,6 +205,8 @@ hooks:
 | `{all_files}`    | All tracked files matching the task's `glob` / `exclude`    |
 | `{1}`, `{2}` …   | Arguments git passed to the hook (e.g. commit message file) |
 
+Hook arguments are quoted for the shell when needed, so write `{1}`, not `"{1}"`. An argument git did not pass expands to nothing.
+
 Long file lists are split into chunks so commands stay under OS argument limits (Windows in particular).
 
 ### Local overrides

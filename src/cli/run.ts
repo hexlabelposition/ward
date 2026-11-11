@@ -21,6 +21,7 @@ export type RunOptions = {
  */
 export async function run({
   hook,
+  args = [],
   cwd = process.cwd(),
   env = process.env,
 }: RunOptions): Promise<number> {
@@ -52,5 +53,5 @@ export async function run({
 
   // Imported only when there is something to run: keeps the no-op path fast.
   const { runHook } = await import("../runner/run-hook.ts");
-  return runHook({ hook, tasks, root: paths.root, env });
+  return runHook({ hook, tasks, args, root: paths.root, env });
 }

@@ -46,7 +46,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 
 - [x] **W15** `ward run <hook>`: fast exit when hook not configured
 - [x] **W16** Run commands sequentially, stop on first failure, propagate exit code
-- [ ] **W17** `{1}`, `{2}` placeholders for git hook args
+- [x] **W17** `{1}`, `{2}` placeholders for git hook args
 - [ ] **W18** `WARD=0` skip
 - [ ] **W60** Skip hooks automatically during merge / rebase
 
