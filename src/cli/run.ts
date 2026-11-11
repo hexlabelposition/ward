@@ -1,5 +1,6 @@
 import { readConfig } from "../config/read.ts";
 import { getRepoPaths, type RepoPaths } from "../git/paths.ts";
+import { getGitOperation } from "../git/state.ts";
 import { isHookName } from "../hooks/list.ts";
 import { isErrnoCode } from "../util/errors.ts";
 
@@ -18,7 +19,7 @@ export type RunOptions = {
  * A hook with no tasks (no config, or the hook is not in it) exits 0 without
  * output: every hook has a stub, so this is the common case. Otherwise the
  * tasks run in order and the first failure is the exit code.
- * `WARD=0` skips the hook.
+ * `WARD=0` skips the hook, and so does a merge or rebase in progress.
  */
 export async function run({
   hook,
@@ -50,6 +51,10 @@ export async function run({
     console.error("ward: not inside a git working tree");
     return 1;
   }
+
+  // Commits git makes during a merge or rebase are not the user's working
+  // changes: checking them again would only get in the way.
+  if (getGitOperation(paths.gitDir) !== null) return 0;
 
   const config = await readConfig(paths.root);
   const tasks = config?.hooks[hook]?.tasks ?? [];

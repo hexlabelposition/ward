@@ -28,6 +28,15 @@ function writeHook(repo: TempRepo, hook: unknown) {
   );
 }
 
+/** Two branches that change the same line: `main` and `other`. */
+function conflictingBranches(repo: TempRepo) {
+  repo.commit("base", { "a.txt": "base\n" });
+  repo.git("switch", "--quiet", "-c", "other");
+  repo.commit("other", { "a.txt": "other\n" });
+  repo.git("switch", "--quiet", "main");
+  repo.commit("main", { "a.txt": "main\n" });
+}
+
 const posixOnly = process.platform === "win32" ? it.skip : it;
 
 describe("ward run", () => {
@@ -216,6 +225,34 @@ describe("ward run", () => {
     ).toBe(3);
   });
 
+  it("skips the hook while a merge is in progress", () => {
+    using repo = createTempRepo();
+    conflictingBranches(repo);
+    writeHook(repo, [node("process.exit(3)")]);
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(3);
+
+    spawnSync("git", ["merge", "other"], { cwd: repo.dir, env: repo.env });
+
+    expect(ward(repo, ["run", "pre-commit"])).toEqual({
+      status: 0,
+      stdout: "",
+      stderr: "",
+    });
+  });
+
+  it("skips the hook while a rebase is in progress", () => {
+    using repo = createTempRepo();
+    conflictingBranches(repo);
+    writeHook(repo, [node("process.exit(3)")]);
+
+    spawnSync("git", ["rebase", "other"], { cwd: repo.dir, env: repo.env });
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+
+    repo.git("rebase", "--abort");
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(3);
+  });
+
   it("passes stdin to the task", () => {
     using repo = createTempRepo();
     writeHook(repo, [node("process.stdin.pipe(process.stdout)")]);
@@ -323,6 +360,25 @@ function commit(repo: TempRepo) {
 }
 
 describe("ward run from git", () => {
+  posixOnly("lets a merge commit through without running tasks", () => {
+    using repo = createTempRepo();
+    conflictingBranches(repo);
+    repo.write("ward.yml", "hooks:\n  pre-commit: exit 4\n");
+    installStubs(repo);
+    spawnSync("git", ["merge", "other"], { cwd: repo.dir, env: repo.env });
+    repo.write("a.txt", "merged\n");
+    repo.git("add", "a.txt");
+
+    const result = spawnSync("git", ["commit", "--no-edit"], {
+      cwd: repo.dir,
+      env: repo.env,
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(repo.git("rev-list", "--count", "--merges", "HEAD")).toBe("1");
+  });
+
   posixOnly("passes the commit message file as {1}", () => {
     using repo = createTempRepo();
     repo.write("ward.yml", "hooks:\n  commit-msg: grep -q init {1}\n");

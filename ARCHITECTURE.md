@@ -134,7 +134,7 @@ Lazy `import()` keeps cold start minimal.
 
 ### Merge and rebase
 
-If `MERGE_HEAD`, `rebase-merge/` or `rebase-apply/` exists in the git dir, `ward run` exits 0 without running tasks. Commits created by git during a merge or rebase are not the user's working changes.
+If `MERGE_HEAD`, `rebase-merge/` or `rebase-apply/` exists in the git dir, `ward run` exits 0 without running tasks. Commits created by git during a merge or rebase are not the user's working changes. The check uses the git dir of the worktree, so a merge in one worktree does not affect another. `rebase-apply/` also covers `git am`. The config is not read, so even an invalid one does not block the merge.
 
 ### Config loading
 
