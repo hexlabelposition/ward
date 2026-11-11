@@ -53,7 +53,6 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 ### Release
 
 - [x] **W50** README with examples
-- [ ] **W51** Changesets for versioning and changelog
 - [ ] **W52** Publish to npm with provenance
 
 ## 0.2 - Replace lint-staged
@@ -188,7 +187,7 @@ Done when: a husky + lint-staged or lefthook repo migrates with one command, and
 - Scripts folder with a per-language runner (as in lefthook) - plain commands cover it (`python scripts/check.py`)
 - Go binary - maybe in the future, JS package for Node / Bun / Deno for now
 
-Retired: W62 (task `env` / `cwd` - `cwd` became `root` in W59).
+Retired: W51 (Changesets - not used), W62 (task `env` / `cwd` - `cwd` became `root` in W59).
 
 ## Open questions
 
