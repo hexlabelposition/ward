@@ -16,7 +16,8 @@ export type RunOptions = {
  * `ward run <hook> [args]`, called by the stubs. Returns the exit code.
  *
  * A hook with no tasks (no config, or the hook is not in it) exits 0 without
- * output: every hook has a stub, so this is the common case.
+ * output: every hook has a stub, so this is the common case. Otherwise the
+ * tasks run in order and the first failure is the exit code.
  */
 export async function run({
   hook,
@@ -49,9 +50,7 @@ export async function run({
   const tasks = config?.hooks[hook]?.tasks ?? [];
   if (tasks.length === 0) return 0;
 
-  // Placeholder until tasks run (W16): don't block git meanwhile.
-  console.warn(
-    `ward: ${hook} has ${String(tasks.length)} tasks, but running tasks is not implemented yet`,
-  );
-  return 0;
+  // Imported only when there is something to run: keeps the no-op path fast.
+  const { runHook } = await import("../runner/run-hook.ts");
+  return runHook({ hook, tasks, root: paths.root, env });
 }
