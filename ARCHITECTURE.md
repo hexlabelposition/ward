@@ -103,8 +103,8 @@ The hooks directory is resolved with `git rev-parse --git-path hooks` - never ha
 ```sh
 #!/bin/sh
 # ward:managed v1
-[ "$WARD" = "0" ] && exit 0
 bin=node_modules/.bin/ward        # git runs hooks from the repo root
+[ "$WARD" = "0" ] && exit 0       # after a chained hook, if there is one
 [ -f "$bin" ] || { echo "ward: $bin not found, skipping" >&2; exit 0; }
 case "${WARD_RUNTIME:-node}" in   # default = runtime that ran install
   bun)  exec bun "$bin" run pre-commit "$@" ;;
@@ -271,7 +271,7 @@ After each run Ward prints: status and duration per task, the reason a task fail
 
 ### Skip
 
-- `WARD=0` → stub exits immediately.
+- `WARD=0` → the stub skips Ward without starting it; `ward run` called directly exits 0 too. A chained `<hook>.pre-ward` still runs: it is not Ward's (`--no-verify` skips everything).
 - Merge / rebase in progress → `run` exits 0.
 - `WARD_SKIP_TAGS` / `--skip-tag` → skip tagged tasks.
 

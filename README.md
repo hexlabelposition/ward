@@ -271,6 +271,8 @@ WARD=0 git commit                # disable Ward for one command
 WARD_SKIP_TAGS=slow git commit   # skip tasks tagged "slow"
 ```
 
+`WARD=0` skips only Ward: a hook that was there before Ward and is chained from the stub still runs.
+
 Hooks are skipped automatically while a merge or rebase is in progress.
 
 ## CI

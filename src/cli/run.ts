@@ -18,6 +18,7 @@ export type RunOptions = {
  * A hook with no tasks (no config, or the hook is not in it) exits 0 without
  * output: every hook has a stub, so this is the common case. Otherwise the
  * tasks run in order and the first failure is the exit code.
+ * `WARD=0` skips the hook.
  */
 export async function run({
   hook,
@@ -33,6 +34,9 @@ export async function run({
     console.error(`ward run: unknown hook "${hook}"`);
     return 1;
   }
+
+  // The stubs check this themselves; this covers `ward run` called directly.
+  if (env.WARD === "0") return 0;
 
   let paths: RepoPaths | null;
   try {

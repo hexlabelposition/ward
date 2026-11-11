@@ -6,11 +6,11 @@ import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 
 const CLI = resolve(import.meta.dirname, "../../src/cli/index.ts");
 
-function ward(repo: TempRepo, args: string[], cwd = repo.dir) {
+function ward(repo: TempRepo, args: string[], cwd = repo.dir, env = repo.env) {
   const { status, stdout, stderr } = spawnSync(
     process.execPath,
     [CLI, ...args],
-    { cwd, env: repo.env, encoding: "utf8" },
+    { cwd, env, encoding: "utf8" },
   );
   return { status, stdout, stderr };
 }
@@ -185,6 +185,35 @@ describe("ward run", () => {
 
     expect(status).toBe(0);
     expect(JSON.parse(stdout)).toEqual(["second", "msg file"]);
+  });
+
+  it("skips the hook with WARD=0", () => {
+    using repo = createTempRepo();
+    writeHook(repo, [node("process.exit(3)")]);
+
+    expect(
+      ward(repo, ["run", "pre-commit"], repo.dir, { ...repo.env, WARD: "0" }),
+    ).toEqual({ status: 0, stdout: "", stderr: "" });
+  });
+
+  it("skips with WARD=0 even when the config is invalid", () => {
+    using repo = createTempRepo();
+    repo.write("ward.yml", "hooks:\n  pre-comit: npm test\n");
+
+    expect(
+      ward(repo, ["run", "pre-commit"], repo.dir, { ...repo.env, WARD: "0" })
+        .status,
+    ).toBe(0);
+  });
+
+  it("runs the hook for other values of WARD", () => {
+    using repo = createTempRepo();
+    writeHook(repo, [node("process.exit(3)")]);
+
+    expect(
+      ward(repo, ["run", "pre-commit"], repo.dir, { ...repo.env, WARD: "1" })
+        .status,
+    ).toBe(3);
   });
 
   it("passes stdin to the task", () => {

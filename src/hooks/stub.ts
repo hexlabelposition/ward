@@ -28,6 +28,8 @@ export type StubOptions = {
  *
  * - A hook that was there before ward (`<hook>.pre-ward`) runs first; if it
  *   fails, git stops and ward does not run.
+ * - `WARD=0` skips ward without starting it. A chained hook still runs: it
+ *   is not ward's (git-lfs), and `--no-verify` is there to skip everything.
  * - If the binary is missing (dependencies not installed yet), it warns and
  *   lets git continue instead of blocking every commit.
  */
@@ -57,6 +59,7 @@ ${MARKER} v${String(STUB_VERSION)}
 bin=${shQuote(bin)}
 prev="$0${CHAINED_SUFFIX}"
 ward() {
+  [ "\${WARD-}" = "0" ] && return 0
   if [ ! -f "$bin" ]; then
     echo "ward: $bin not found, skipping ${hook} (install dependencies to enable hooks)" >&2
     return 0

@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -29,10 +35,10 @@ function writeFakeBin(repo: TempRepo, path: string, code = 0) {
 }
 
 /** Commit with hooks enabled (no --no-verify, unlike repo.commit()). */
-function commit(repo: TempRepo, cwd = repo.dir) {
+function commit(repo: TempRepo, cwd = repo.dir, env = repo.env) {
   execFileSync("git", ["commit", "--allow-empty", "--quiet", "-m", "msg"], {
     cwd,
-    env: repo.env,
+    env,
     stdio: "pipe",
   });
 }
@@ -98,6 +104,40 @@ describe("renderStub", () => {
       commit(repo);
     }).not.toThrow();
     expect(repo.git("log", "--format=%s")).toBe("msg");
+  });
+
+  it("skips ward with WARD=0", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward", 3);
+    installStub(repo, renderStub("pre-commit"));
+
+    commit(repo, repo.dir, { ...repo.env, WARD: "0" });
+
+    expect(repo.git("log", "--format=%s")).toBe("msg");
+    expect(existsSync(join(repo.dir, "ward-called.txt"))).toBe(false);
+  });
+
+  it("runs ward for other values of WARD", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit"));
+
+    commit(repo, repo.dir, { ...repo.env, WARD: "1" });
+
+    expect(calledWith(repo)).toBe("run pre-commit");
+  });
+
+  it("still runs a chained hook with WARD=0", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit"));
+    const prev = join(repo.dir, ".git", "hooks", "pre-commit.pre-ward");
+    writeFileSync(prev, "#!/bin/sh\nexit 5\n");
+    chmodSync(prev, 0o755);
+
+    expect(() => {
+      commit(repo, repo.dir, { ...repo.env, WARD: "0" });
+    }).toThrow();
   });
 
   it("uses a custom bin path", () => {
