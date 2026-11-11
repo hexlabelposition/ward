@@ -1,6 +1,6 @@
 {
   "name": "@hexlabelposition/ward",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Git hooks and staged-file linting in one tool. One config, zero hook folders.",
   "license": "MIT",
   "author": "Vladyslav Kudriashov",

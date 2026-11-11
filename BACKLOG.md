@@ -53,7 +53,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 ### Release
 
 - [x] **W50** README with examples
-- [ ] **W52** Publish to npm with provenance
+- [x] **W52** Publish to npm with provenance
 
 ## 0.2 - Replace lint-staged
 
