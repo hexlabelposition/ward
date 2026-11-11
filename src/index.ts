@@ -1,2 +1,8 @@
-// Public API: defineConfig and config types (W13).
-export {};
+// Public API.
+export { defineConfig } from "./config/define.ts";
+export type {
+  Config,
+  HookConfig,
+  HookName,
+  TaskConfig,
+} from "./config/define.ts";
