@@ -52,7 +52,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 
 ### Release
 
-- [ ] **W50** README with examples
+- [x] **W50** README with examples
 - [ ] **W51** Changesets for versioning and changelog
 - [ ] **W52** Publish to npm with provenance
 
