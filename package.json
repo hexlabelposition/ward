@@ -4,6 +4,8 @@
   "description": "Git hooks and staged-file linting in one tool. One config, zero hook folders.",
   "license": "MIT",
   "author": "Vladyslav Kudriashov",
+  "homepage": "https://github.com/hexlabelposition/ward#readme",
+  "bugs": "https://github.com/hexlabelposition/ward/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hexlabelposition/ward.git"

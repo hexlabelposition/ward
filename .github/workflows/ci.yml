@@ -4,13 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release workflow runs these checks on the tagged commit.
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -25,6 +27,8 @@ jobs:
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck
+      - run: bun run build
+      - run: npm pack --dry-run
 
   # Bun is only the package manager here: tsdown, tsc and vitest run on the matrix Node.
   test-node:
