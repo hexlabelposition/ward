@@ -152,7 +152,7 @@ Merge order: `extends` packages (in listed order) → repo config → `ward.loca
 
 Function tasks and the task graph (`dependsOn`, `root`) are only available in the TS config; YAML and `package.json` hold plain data. The docs must say this explicitly.
 
-`defineConfig` gives types and autocomplete; `schema.ts` validates every source at load time with clear errors (unknown hook, unknown option, bad glob). A JSON Schema covers YAML and `package.json`.
+`defineConfig` gives types and autocomplete; `schema.ts` validates every source at load time with clear errors (unknown hook, unknown option, bad glob). It lists every problem with its path in the config (`hooks.pre-push[1]`) and suggests close names; options from later versions fail as "not supported yet" instead of being ignored. A JSON Schema covers YAML and `package.json`.
 
 All forms are normalized to one internal model (`schema.ts`; fields arrive with their features). The string and array forms become tasks named after their command:
 

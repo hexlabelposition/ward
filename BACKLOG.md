@@ -40,7 +40,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 - [x] **W12** Load TS config with native Node type stripping, YAML via `yaml`, `"ward"` section of `package.json`
 - [x] **W13** `defineConfig()` + exported types
 - [x] **W14** Normalize config: string / array / `{ tasks }`
-- [ ] **W45** Config validation with helpful errors (unknown hook name, unknown option, bad glob)
+- [x] **W45** Config validation with helpful errors (unknown hook name, unknown option; bad glob moved to W27)
 
 ### Run
 
@@ -67,7 +67,7 @@ Done when: this repo runs its own Prettier and ESLint through Ward on staged fil
 - [ ] **W26** List staged files (`--diff-filter=ACMR`, null-separated)
 - [ ] **W65** List push files (`pre-push` stdin refs) and all tracked files
 - [ ] **W28** Named tasks: `{ tasks: { name: { run, ... } } }`
-- [ ] **W27** `glob` / `exclude` per task (picomatch)
+- [ ] **W27** `glob` / `exclude` per task (picomatch), invalid glob is a config error
 - [ ] **W29** `{staged_files}`, `{push_files}`, `{all_files}` placeholders
 - [ ] **W32** Skip task when no files match
 - [ ] **W66** Ignore symlinks by default, `symlinks: true` to include
