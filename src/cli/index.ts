@@ -5,9 +5,9 @@ import { parseArgs } from "node:util";
 async function main(argv: string[]): Promise<number> {
   if (argv[0] === "run") {
     // Hook args from git are passed through as is, so they are not parsed here.
-    // No config loading yet (W11-W15), so no hook has tasks: exit 0 instead of
-    // blocking git with "unknown command" right after install.
-    return 0;
+    const [hook, ...args] = argv.slice(1);
+    const { run } = await import("./run.ts");
+    return run({ hook, args });
   }
 
   const { positionals, values } = parseArgs({

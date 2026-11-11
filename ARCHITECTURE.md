@@ -146,7 +146,7 @@ If `MERGE_HEAD`, `rebase-merge/` or `rebase-apply/` exists in the git dir, `ward
 
 Loaders return raw data; validation and normalization come after. A TS config must have a default export; syntax Node can't strip (`enum`, `namespace`, parameter properties) fails with the line and a hint. An empty `ward.yml` is an empty config; duplicate keys and several YAML documents are errors.
 
-Discovery order: `ward.config.ts` → `ward.yml` / `ward.yaml` → `package.json`. If several sources exist → error, not a silent pick. Only the repo root is searched, never parent or package dirs: one config per repo. `package.json` counts only when it has a `"ward"` key. No config means no tasks: every hook is a no-op.
+Discovery order: `ward.config.ts` → `ward.yml` / `ward.yaml` → `package.json`. If several sources exist → error, not a silent pick. Only the repo root is searched, never parent or package dirs: one config per repo. `package.json` counts only when it has a `"ward"` key. No config means no tasks: every hook is a no-op. `ward run` validates the whole config, not only the hook it runs, so an invalid config fails every hook: a typo like `pre-comit` would otherwise go unnoticed.
 
 Merge order: `extends` packages (in listed order) → repo config → `ward.local.*`.
 
