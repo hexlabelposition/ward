@@ -154,10 +154,10 @@ Function tasks and the task graph (`dependsOn`, `root`) are only available in th
 
 `defineConfig` gives types and autocomplete; `schema.ts` validates every source at load time with clear errors (unknown hook, unknown option, bad glob). A JSON Schema covers YAML and `package.json`.
 
-All forms are normalized to one internal model:
+All forms are normalized to one internal model (`schema.ts`; fields arrive with their features). The string and array forms become tasks named after their command:
 
 ```ts
-type HookConfig = {
+type Hook = {
   tasks: Task[]; // from string | string[] | { tasks: { name: task } }
   parallel: boolean;
   backup: boolean;

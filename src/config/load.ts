@@ -1,9 +1,9 @@
 import type { ConfigSource } from "./discover.ts";
 
 /**
- * Load the raw config from a discovered source: not validated or normalized
- * yet (W45, W14). Loaders are imported lazily, so a TS config never loads the
- * YAML parser.
+ * Load the raw config from a discovered source: not validated (W45) or
+ * normalized (`normalizeConfig`) yet. Loaders are imported lazily, so a TS
+ * config never loads the YAML parser.
  */
 export async function loadConfig({
   format,

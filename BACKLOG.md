@@ -39,7 +39,7 @@ Done when: `npm i -D @hexlabelposition/ward` + `"prepare": "ward"` + a config fu
 - [x] **W11** Config discovery: `ward.config.ts` → `ward.{yml,yaml}` → `package.json`; error when several exist
 - [x] **W12** Load TS config with native Node type stripping, YAML via `yaml`, `"ward"` section of `package.json`
 - [x] **W13** `defineConfig()` + exported types
-- [ ] **W14** Normalize config: string / array / `{ tasks }`
+- [x] **W14** Normalize config: string / array / `{ tasks }`
 - [ ] **W45** Config validation with helpful errors (unknown hook name, unknown option, bad glob)
 
 ### Run
