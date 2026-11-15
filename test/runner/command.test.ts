@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { expandCommand, fileSources } from "../../src/runner/command.ts";
+import {
+  expandCommand,
+  expandCommandChunks,
+  fileSources,
+  maxCommandLength,
+} from "../../src/runner/command.ts";
 
 describe("expandCommand", () => {
   it("replaces {1}, {2} with hook arguments", () => {
@@ -124,5 +129,94 @@ describe("fileSources", () => {
       new Set(["push", "all"]),
     );
     expect(fileSources("npm test {files}")).toEqual(new Set());
+  });
+});
+
+describe("expandCommandChunks", () => {
+  const files = ["aaa.ts", "bbb.ts", "ccc.ts", "ddd.ts", "eee.ts"];
+
+  it("returns one command when it fits", () => {
+    expect(
+      expandCommandChunks("lint {staged_files}", { files: { staged: files } }),
+    ).toEqual(["lint aaa.ts bbb.ts ccc.ts ddd.ts eee.ts"]);
+  });
+
+  it("splits a long file list, keeping every file once and in order", () => {
+    // "lint " + "aaa.ts bbb.ts" = 18
+    expect(
+      expandCommandChunks(
+        "lint {staged_files}",
+        { files: { staged: files } },
+        "linux",
+        18,
+      ),
+    ).toEqual(["lint aaa.ts bbb.ts", "lint ccc.ts ddd.ts", "lint eee.ts"]);
+  });
+
+  it("repeats hook args and other lists in every command", () => {
+    expect(
+      expandCommandChunks(
+        "x {1} {all_files} -- {staged_files}",
+        { args: ["arg"], files: { staged: files, all: ["z"] } },
+        "linux",
+        24,
+      ),
+    ).toEqual([
+      "x arg z -- aaa.ts bbb.ts",
+      "x arg z -- ccc.ts ddd.ts",
+      "x arg z -- eee.ts",
+    ]);
+  });
+
+  it("counts every use of the list", () => {
+    expect(
+      expandCommandChunks(
+        "a {staged_files} b {staged_files}",
+        { files: { staged: files } },
+        "linux",
+        31,
+      ),
+    ).toEqual([
+      "a aaa.ts bbb.ts b aaa.ts bbb.ts",
+      "a ccc.ts ddd.ts b ccc.ts ddd.ts",
+      "a eee.ts b eee.ts",
+    ]);
+  });
+
+  it("gives a file longer than the limit a command of its own", () => {
+    expect(
+      expandCommandChunks(
+        "x {staged_files}",
+        { files: { staged: ["a.ts", "a-very-long-name.ts", "b.ts"] } },
+        "linux",
+        10,
+      ),
+    ).toEqual(["x a.ts", "x a-very-long-name.ts", "x b.ts"]);
+  });
+
+  it("counts quotes, and bytes on POSIX but characters on Windows", () => {
+    const names = ["ж ж.ts", "ж ж.ts"];
+    // sh: "x 'ж ж.ts'" is 13 bytes; cmd: 'x "ж ж.ts"' is 10 characters.
+    expect(
+      expandCommandChunks(
+        "x {staged_files}",
+        { files: { staged: names } },
+        "linux",
+        20,
+      ),
+    ).toHaveLength(2);
+    expect(
+      expandCommandChunks(
+        "x {staged_files}",
+        { files: { staged: names } },
+        "win32",
+        20,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("uses a lower limit on Windows", () => {
+    expect(maxCommandLength("win32")).toBeLessThan(8191);
+    expect(maxCommandLength("linux")).toBeLessThan(128 * 1024);
   });
 });

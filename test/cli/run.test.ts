@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
@@ -362,6 +368,30 @@ describe("ward run", () => {
     expect(ward(repo, ["run", "pre-commit"]).stdout).toBe(
       "plain|a.md\nlinks|a.md|link.md\n",
     );
+  });
+
+  it("runs a task several times for a file list over the length limit", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    // ~150 KB of paths: over the limit on every platform.
+    const names = Array.from(
+      { length: 1000 },
+      (_, i) => `src/${"x".repeat(140)}-${String(i).padStart(4, "0")}.ts`,
+    );
+    for (const name of names) repo.write(name, "");
+    writeHook(repo, [
+      `${node("require('fs').appendFileSync('runs.txt', process.argv.slice(1).join('\\n') + '\\n--\\n')")} {staged_files}`,
+    ]);
+    repo.git("add", "src");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+
+    const runs = readFileSync(join(repo.dir, "runs.txt"), "utf8")
+      .split("--\n")
+      .filter((run) => run !== "")
+      .map((run) => run.trimEnd().split("\n"));
+    expect(runs.length).toBeGreaterThan(1);
+    expect(runs.flat()).toEqual(names);
   });
 
   it("passes all tracked files with {all_files}", () => {

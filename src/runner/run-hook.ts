@@ -10,7 +10,7 @@ import type { GitOptions } from "../git/exec.ts";
 import type { HookName } from "../hooks/list.ts";
 import {
   DEFAULT_FILE_SOURCE,
-  expandCommand,
+  expandCommandChunks,
   type FileSource,
   fileSources,
 } from "./command.ts";
@@ -79,11 +79,12 @@ export async function runHook({
     const lists = Object.values(files);
     if (lists.length > 0 && lists.every((list) => list.length === 0)) continue;
 
-    const code = await execCommand(expandCommand(task.run, { args, files }), {
-      cwd: root,
-      env,
-      input,
-    });
+    // Long file lists run as several commands, one after another.
+    let code = 0;
+    for (const command of expandCommandChunks(task.run, { args, files })) {
+      code = await execCommand(command, { cwd: root, env, input });
+      if (code !== 0) break;
+    }
     if (code !== 0) {
       console.error(
         `ward: ${hook} failed: ${task.name} (exit ${String(code)})`,

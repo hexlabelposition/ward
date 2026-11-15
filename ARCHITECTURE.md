@@ -243,7 +243,7 @@ If `core.hooksPath` is set, git ignores `.git/hooks` → print a clear warning a
 
 - Commands run through the system shell, cwd = repo root or the task's `root`.
 - Function tasks are called in-process with the matched file list.
-- Placeholder expansion with chunking to stay under OS argument limits (Windows ~8k chars).
+- Placeholder expansion with chunking to stay under OS limits: 8000 characters on Windows (`cmd.exe` takes 8191), 100 000 bytes elsewhere (Linux caps one argument, the `sh -c` command, at 128 KiB). A longer command runs several times in a row, each with the next files of its longest list, and stops at the first failure.
 - File paths are passed relative to the working directory, properly quoted.
 - With `parallel: true`, tasks run concurrently, respecting `dependsOn`.
 - Output is streamed; in parallel mode, prefixed with task name.

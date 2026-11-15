@@ -68,6 +68,82 @@ export function expandCommand(
   });
 }
 
+/**
+ * Longest command Ward passes to the shell. `cmd.exe` takes 8191 characters
+ * for the whole command line; on Linux `sh -c <command>` gets the command as
+ * one argument, capped at 128 KiB, and macOS caps arguments and environment
+ * together at 1 MiB. Both leave room for the shell's own part and the env.
+ */
+export function maxCommandLength(platform: NodeJS.Platform): number {
+  return platform === "win32" ? 8000 : 100_000;
+}
+
+/**
+ * Expand a command, split into several commands when the file lists would
+ * make it longer than `maxLength` (`maxCommandLength`). Each command gets the
+ * next files of the longest list, in order; other lists and `{1}`, `{2}` are
+ * expanded in full in each. A file is never split, so a single file longer
+ * than the limit still gets a command of its own.
+ *
+ * Length is counted in UTF-8 bytes on POSIX (the kernel limit) and in
+ * characters on Windows (`cmd.exe`).
+ */
+export function expandCommandChunks(
+  command: string,
+  values: ExpandValues,
+  platform: NodeJS.Platform = process.platform,
+  maxLength = maxCommandLength(platform),
+): string[] {
+  const full = expandCommand(command, values, platform);
+  const length = (text: string) =>
+    platform === "win32" ? text.length : Buffer.byteLength(text);
+  if (length(full) <= maxLength) return [full];
+
+  // The list to split: the one with the most files among those in `command`.
+  let source: FileSource | undefined;
+  let files: readonly string[] = [];
+  for (const candidate of fileSources(command)) {
+    const list = values.files?.[candidate] ?? [];
+    if (list.length > files.length) {
+      source = candidate;
+      files = list;
+    }
+  }
+  if (source === undefined || files.length <= 1) return [full];
+
+  const placeholder = Object.keys(FILE_PLACEHOLDERS).find(
+    (name) => FILE_PLACEHOLDERS[name] === source,
+  );
+  const uses = command.split(`{${String(placeholder)}}`).length - 1;
+  const expandWith = (chunk: readonly string[]) =>
+    expandCommand(
+      command,
+      { ...values, files: { ...values.files, [source]: chunk } },
+      platform,
+    );
+
+  // Each file adds its quoted form at every use of the list, plus a space
+  // before it unless it is the first.
+  const base = length(expandWith([]));
+  const commands: string[] = [];
+  let chunk: string[] = [];
+  let size = base;
+  for (const file of files) {
+    const quoted = length(quote(file, platform));
+    const cost = uses * (chunk.length === 0 ? quoted : quoted + 1);
+    if (chunk.length > 0 && size + cost > maxLength) {
+      commands.push(expandWith(chunk));
+      chunk = [];
+      size = base;
+    }
+    if (chunk.length === 0) size += uses * quoted;
+    else size += cost;
+    chunk.push(file);
+  }
+  commands.push(expandWith(chunk));
+  return commands;
+}
+
 /** Quote one argument for `sh`, or for `cmd.exe` on Windows. */
 export function quote(value: string, platform: NodeJS.Platform): string {
   if (platform === "win32") {
