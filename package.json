@@ -47,6 +47,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.6",
+    "@types/picomatch": "^4.0.3",
     "eslint": "^10.14.0",
     "jiti": "^2.7.0",
     "prettier": "^3.9.10",
@@ -56,6 +57,7 @@
     "vitest": "^5.0.5"
   },
   "dependencies": {
+    "picomatch": "^4.0.7",
     "yaml": "^2.9.1"
   }
 }

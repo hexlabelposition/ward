@@ -3,13 +3,20 @@ import type { HookName } from "../hooks/list.ts";
 export type { HookName };
 
 /**
- * A named task. Only `run` for now: `glob`, `exclude`, `stageFixed` and the
- * other task options are added together with the features behind them
- * (0.2 and later).
+ * A named task. `stageFixed` and the other task options are added together
+ * with the features behind them (0.2 and later).
  */
 export type TaskConfig = {
   /** Shell command, run from the repo root. `{1}`, `{2}` … are git hook args. */
   run: string;
+  /**
+   * Files the task runs on: one pattern or a list, any of them may match.
+   * A pattern without `/` matches the file name in any directory (`"*.ts"`),
+   * one with `/` the path from the repo root (`"src/*.ts"` matches `src/a.ts` only).
+   */
+  glob?: string | readonly string[];
+  /** Files to leave out even when `glob` matches them, same pattern rules. */
+  exclude?: string | readonly string[];
 };
 
 /**

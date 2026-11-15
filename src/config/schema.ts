@@ -1,4 +1,5 @@
 import { HOOKS, type HookName, isHookName } from "../hooks/list.ts";
+import { checkGlob } from "../runner/match.ts";
 import type { Config, HookConfig } from "./define.ts";
 import { ConfigError } from "./errors.ts";
 
@@ -10,6 +11,10 @@ export type Task = {
   /** Key in `{ tasks }`; for the string and array forms, the command itself. */
   readonly name: string;
   readonly run: string;
+  /** Files the task runs on; all files when absent. */
+  readonly glob?: readonly string[];
+  /** Files dropped even when `glob` matches them. */
+  readonly exclude?: readonly string[];
 };
 
 export type Hook = {
@@ -28,22 +33,13 @@ export type ResolvedConfig = {
 const PLANNED = {
   config: ["extends"],
   hook: ["parallel", "backup", "revert"],
-  task: [
-    "glob",
-    "exclude",
-    "root",
-    "tags",
-    "stageFixed",
-    "symlinks",
-    "cache",
-    "dependsOn",
-  ],
+  task: ["root", "tags", "stageFixed", "symlinks", "cache", "dependsOn"],
 } as const;
 
 const KNOWN = {
   config: ["hooks"],
   hook: ["tasks"],
-  task: ["run"],
+  task: ["run", "glob", "exclude"],
 } as const;
 
 /**
@@ -149,7 +145,14 @@ function checkTask(task: unknown, path: string, report: Report): void {
     return;
   }
   for (const key of Object.keys(task)) {
-    if (key !== "run") report(join(path, key), unknownOption(key, "task"));
+    if (!(KNOWN.task as readonly string[]).includes(key)) {
+      report(join(path, key), unknownOption(key, "task"));
+    }
+  }
+  for (const key of ["glob", "exclude"] as const) {
+    if (Object.hasOwn(task, key)) {
+      checkPatterns(task[key], join(path, key), report);
+    }
   }
   if (!Object.hasOwn(task, "run")) {
     report(path, "missing `run`");
@@ -160,6 +163,39 @@ function checkTask(task: unknown, path: string, report: Report): void {
     return;
   }
   checkCommand(task.run, join(path, "run"), report);
+}
+
+/** `glob` / `exclude`: one pattern or a non-empty list of them. */
+function checkPatterns(value: unknown, path: string, report: Report): void {
+  if (typeof value === "string") {
+    checkPattern(value, path, report);
+    return;
+  }
+  if (!Array.isArray(value)) {
+    report(
+      path,
+      `expected a pattern or a list of patterns, got ${describe(value)}`,
+    );
+    return;
+  }
+  if (value.length === 0) {
+    report(path, "list of patterns is empty");
+    return;
+  }
+  value.forEach((pattern: unknown, i) => {
+    const itemPath = `${path}[${String(i)}]`;
+    if (typeof pattern !== "string") {
+      report(itemPath, `expected a pattern string, got ${describe(pattern)}`);
+    } else {
+      checkPattern(pattern, itemPath, report);
+    }
+  });
+}
+
+function checkPattern(pattern: string, path: string, report: Report): void {
+  const problem = checkGlob(pattern);
+  if (problem !== null)
+    report(path, `invalid pattern "${pattern}": ${problem}`);
 }
 
 function checkCommand(value: unknown, path: string, report: Report): void {
@@ -245,7 +281,16 @@ export function normalizeConfig(config: Config): ResolvedConfig {
 function normalizeTasks(value: HookConfig): Task[] {
   if (typeof value === "string") return [{ name: value, run: value }];
   if (isCommandList(value)) return value.map((run) => ({ name: run, run }));
-  return Object.entries(value.tasks).map(([name, { run }]) => ({ name, run }));
+  return Object.entries(value.tasks).map(([name, task]) => ({
+    name,
+    run: task.run,
+    ...(task.glob !== undefined && { glob: toList(task.glob) }),
+    ...(task.exclude !== undefined && { exclude: toList(task.exclude) }),
+  }));
+}
+
+function toList(value: string | readonly string[]): readonly string[] {
+  return typeof value === "string" ? [value] : [...value];
 }
 
 // `Array.isArray` does not narrow `readonly string[]` out of a union.

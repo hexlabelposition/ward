@@ -202,6 +202,8 @@ type Task = {
 | `{all_files}`    | `git ls-files -z`                                                                                                                                        |
 | `--from-ref`     | `git diff --name-only -z <ref>...HEAD`                                                                                                                   |
 
+A task's `glob` / `exclude` pick its files from the source (`runner/match.ts`, picomatch). A pattern without `/` matches the file name in any directory (`*.ts`), as in `.gitignore`; a pattern with `/` matches the path from the repo root (`src/**/*.ts`). Dotfiles match like other files. Unbalanced brackets and patterns starting with `./` or `/` are config errors. picomatch is loaded only when the config has patterns.
+
 Symlinks are dropped unless the task sets `symlinks: true`.
 
 ### Partial staging and backup (the hard part)

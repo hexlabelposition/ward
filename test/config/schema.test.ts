@@ -76,14 +76,55 @@ describe("validateConfig", () => {
         hooks: {
           "pre-commit": {
             parallel: true,
-            tasks: { lint: { run: "eslint", glob: "*.ts" } },
+            tasks: { lint: { run: "eslint", stageFixed: false } },
           },
         },
       }),
     ).toEqual([
       "extends: not supported yet",
       "hooks.pre-commit.parallel: not supported yet",
-      "hooks.pre-commit.tasks.lint.glob: not supported yet",
+      "hooks.pre-commit.tasks.lint.stageFixed: not supported yet",
+    ]);
+  });
+
+  it("accepts `glob` and `exclude` as a pattern or a list", () => {
+    expect(
+      issues({
+        hooks: {
+          "pre-commit": {
+            tasks: {
+              lint: { run: "eslint", glob: "*.{ts,tsx}", exclude: "dist/**" },
+              format: { run: "prettier -w", glob: ["*.md", "docs/**/*.yml"] },
+            },
+          },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("reports invalid patterns", () => {
+    expect(
+      issues({
+        hooks: {
+          "pre-commit": {
+            tasks: {
+              a: { run: "x", glob: "[abc" },
+              b: { run: "x", glob: ["*.ts", "./src/*.ts", 1] },
+              c: { run: "x", glob: [], exclude: "" },
+              d: { run: "x", exclude: { "*.ts": true } },
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      expect.stringMatching(
+        /^hooks\.pre-commit\.tasks\.a\.glob: invalid pattern "\[abc": .*\]/,
+      ),
+      'hooks.pre-commit.tasks.b.glob[1]: invalid pattern "./src/*.ts": patterns are relative to the repo root: write "src/*.ts"',
+      "hooks.pre-commit.tasks.b.glob[2]: expected a pattern string, got a number",
+      "hooks.pre-commit.tasks.c.glob: list of patterns is empty",
+      'hooks.pre-commit.tasks.c.exclude: invalid pattern "": pattern is empty',
+      "hooks.pre-commit.tasks.d.exclude: expected a pattern or a list of patterns, got an object",
     ]);
   });
 
@@ -189,6 +230,35 @@ describe("normalizeConfig", () => {
           tasks: [
             { name: "lint", run: "eslint ." },
             { name: "format", run: "prettier -c ." },
+          ],
+        },
+      },
+    });
+  });
+
+  it("turns `glob` and `exclude` into lists", () => {
+    expect(
+      normalizeConfig({
+        hooks: {
+          "pre-commit": {
+            tasks: {
+              lint: { run: "eslint", glob: "*.ts", exclude: ["a/**", "b/**"] },
+              test: { run: "vitest" },
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      hooks: {
+        "pre-commit": {
+          tasks: [
+            {
+              name: "lint",
+              run: "eslint",
+              glob: ["*.ts"],
+              exclude: ["a/**", "b/**"],
+            },
+            { name: "test", run: "vitest" },
           ],
         },
       },

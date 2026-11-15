@@ -66,7 +66,7 @@ Done when: this repo runs its own Prettier and ESLint through Ward on staged fil
 - [x] **W26** List staged files (`--diff-filter=ACMR`, null-separated)
 - [x] **W65** List push files (`pre-push` stdin refs) and all tracked files
 - [x] **W28** Named tasks: `{ tasks: { name: { run, ... } } }`
-- [ ] **W27** `glob` / `exclude` per task (picomatch), invalid glob is a config error
+- [x] **W27** `glob` / `exclude` per task (picomatch), invalid glob is a config error
 - [ ] **W29** `{staged_files}`, `{push_files}`, `{all_files}` placeholders
 - [ ] **W32** Skip task when no files match
 - [ ] **W66** Ignore symlinks by default, `symlinks: true` to include
