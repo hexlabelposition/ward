@@ -195,12 +195,12 @@ type Task = {
 
 ### File sources
 
-| Source           | How                                                                     |
-| ---------------- | ----------------------------------------------------------------------- |
-| `{staged_files}` | `git diff --cached --name-only -z --diff-filter=ACMR`                   |
-| `{push_files}`   | diff between the remote ref and the local ref from the `pre-push` stdin |
-| `{all_files}`    | `git ls-files -z`                                                       |
-| `--from-ref`     | `git diff --name-only -z <ref>...HEAD`                                  |
+| Source           | How                                                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{staged_files}` | `git diff --cached --name-only -z --diff-filter=ACMR`                                                                                                    |
+| `{push_files}`   | files changed by the pushed commits (`pre-push` stdin): `git log <local> --not <remote sha> --remotes=<remote>`, minus files gone from the pushed commit |
+| `{all_files}`    | `git ls-files -z`                                                                                                                                        |
+| `--from-ref`     | `git diff --name-only -z <ref>...HEAD`                                                                                                                   |
 
 Symlinks are dropped unless the task sets `symlinks: true`.
 
