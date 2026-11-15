@@ -1,10 +1,11 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getAllFiles,
   getPushFiles,
   getStagedFiles,
+  type GitFile,
   parsePushInput,
   type PushUpdate,
 } from "../../src/git/files.ts";
@@ -12,16 +13,41 @@ import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 
 const ZERO = "0".repeat(40);
 
+function paths(files: GitFile[]) {
+  return files.map((file) => file.path).sort();
+}
+
 function staged(repo: TempRepo, cwd = repo.dir) {
-  return getStagedFiles({ cwd, env: repo.env }).sort();
+  return paths(getStagedFiles({ cwd, env: repo.env }));
 }
 
 function all(repo: TempRepo, cwd = repo.dir) {
-  return getAllFiles({ cwd, env: repo.env }).sort();
+  return paths(getAllFiles({ cwd, env: repo.env }));
 }
 
 function pushed(repo: TempRepo, updates: PushUpdate[], remote = "origin") {
-  return getPushFiles(updates, remote, { cwd: repo.dir, env: repo.env }).sort();
+  return paths(getPushFiles(updates, remote, { cwd: repo.dir, env: repo.env }));
+}
+
+/** Symlinks only, from the lists above. */
+function symlinks(files: GitFile[]) {
+  return paths(files.filter((file) => file.symlink));
+}
+
+/**
+ * Stage a symlink `link` → `target` and a submodule `sub` through the index,
+ * so it works without symlink support (Windows).
+ */
+function stageSymlinkAndSubmodule(repo: TempRepo) {
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+    cwd: repo.dir,
+    env: repo.env,
+    input: "target.txt",
+    encoding: "utf8",
+  }).trim();
+  repo.git("update-index", "--add", "--cacheinfo", `120000,${blob},link`);
+  const commit = repo.git("rev-parse", "HEAD");
+  repo.git("update-index", "--add", "--cacheinfo", `160000,${commit},sub`);
 }
 
 /** Add a bare repo as `origin`. It lives in `.git`, so it is removed with the repo. */
@@ -304,7 +330,7 @@ describe("getPushFiles", () => {
       "origin",
       { cwd: repo.dir, env: repo.env },
     );
-    expect(files).toEqual(["a.txt"]);
+    expect(files).toEqual([{ path: "a.txt", symlink: false }]);
   });
 
   it("takes the whole history when pushing to a URL", () => {
@@ -319,5 +345,48 @@ describe("getPushFiles", () => {
         "https://example.invalid/repo.git",
       ),
     ).toEqual(["a.txt", "b.txt"]);
+  });
+});
+
+describe("symlinks and submodules", () => {
+  it("marks staged symlinks and leaves out submodules", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "target.txt": "t\n" });
+    stageSymlinkAndSubmodule(repo);
+    repo.write("a.txt", "a\n");
+    repo.git("add", "a.txt");
+
+    const files = getStagedFiles({ cwd: repo.dir, env: repo.env });
+    expect(paths(files)).toEqual(["a.txt", "link"]);
+    expect(symlinks(files)).toEqual(["link"]);
+  });
+
+  it("marks symlinks in all files and leaves out submodules", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "target.txt": "t\n" });
+    stageSymlinkAndSubmodule(repo);
+
+    const files = getAllFiles({ cwd: repo.dir, env: repo.env });
+    expect(paths(files)).toEqual(["link", "target.txt"]);
+    expect(symlinks(files)).toEqual(["link"]);
+  });
+
+  it("marks pushed symlinks and leaves out submodules", () => {
+    using repo = createTempRepo();
+    addOrigin(repo);
+    repo.commit("init", { "target.txt": "t\n" });
+    repo.git("push", "--quiet", "--no-verify", "origin", "main");
+    stageSymlinkAndSubmodule(repo);
+    repo.write("a.txt", "a\n");
+    repo.git("add", "a.txt");
+    // Not `repo.commit`: `add --all` would drop the index-only link.
+    repo.git("commit", "--quiet", "--no-verify", "-m", "links");
+
+    const files = getPushFiles([update(repo, "main")], "origin", {
+      cwd: repo.dir,
+      env: repo.env,
+    });
+    expect(paths(files)).toEqual(["a.txt", "link"]);
+    expect(symlinks(files)).toEqual(["link"]);
   });
 });

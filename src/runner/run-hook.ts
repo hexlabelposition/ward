@@ -3,6 +3,7 @@ import {
   getAllFiles,
   getPushFiles,
   getStagedFiles,
+  type GitFile,
   parsePushInput,
 } from "../git/files.ts";
 import type { GitOptions } from "../git/exec.ts";
@@ -34,7 +35,8 @@ export type RunHookOptions = {
  * gave; 0 when all passed.
  *
  * File placeholders expand to the files of their source that match the
- * task's `glob` / `exclude`. A task whose placeholders get no files is
+ * task's `glob` / `exclude`. Symlinks are left out unless the task sets
+ * `symlinks: true`: a formatter would write through the link. A task whose placeholders get no files is
  * skipped, so `eslint {staged_files}` never runs on the whole project. A task
  * with `glob` / `exclude` and no placeholder is matched against the hook's
  * files (`DEFAULT_FILE_SOURCE`) and skipped when none match.
@@ -56,8 +58,8 @@ export async function runHook({
   const input = sources.has("push") ? await readStdin() : undefined;
 
   const git: GitOptions = { cwd: root, env };
-  const cache = new Map<FileSource, readonly string[]>();
-  const filesOf = (source: FileSource): readonly string[] => {
+  const cache = new Map<FileSource, readonly GitFile[]>();
+  const filesOf = (source: FileSource): readonly GitFile[] => {
     let files = cache.get(source);
     if (files === undefined) {
       files = listFiles(source, git, args, input ?? "");
@@ -69,7 +71,10 @@ export async function runHook({
   for (const task of tasks) {
     const files: Partial<Record<FileSource, readonly string[]>> = {};
     for (const source of taskSources(task, hook)) {
-      files[source] = matchFiles(filesOf(source), task);
+      const paths = filesOf(source)
+        .filter((file) => task.symlinks === true || !file.symlink)
+        .map((file) => file.path);
+      files[source] = matchFiles(paths, task);
     }
     const lists = Object.values(files);
     if (lists.length > 0 && lists.every((list) => list.length === 0)) continue;
@@ -106,7 +111,7 @@ function listFiles(
   git: GitOptions,
   args: readonly string[],
   input: string,
-): readonly string[] {
+): readonly GitFile[] {
   switch (source) {
     case "staged":
       return getStagedFiles(git);

@@ -136,6 +136,23 @@ describe("validateConfig", () => {
     ]);
   });
 
+  it("accepts `symlinks` as a boolean only", () => {
+    expect(
+      issues({
+        hooks: {
+          "pre-commit": {
+            tasks: {
+              a: { run: "x {staged_files}", symlinks: true },
+              b: { run: "x {staged_files}", symlinks: "yes" },
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      "hooks.pre-commit.tasks.b.symlinks: expected true or false, got a string",
+    ]);
+  });
+
   it("reports invalid patterns", () => {
     expect(
       issues({
@@ -270,14 +287,15 @@ describe("normalizeConfig", () => {
     });
   });
 
-  it("turns `glob` and `exclude` into lists", () => {
+  it("turns `glob` and `exclude` into lists, keeps `symlinks: true`", () => {
     expect(
       normalizeConfig({
         hooks: {
           "pre-commit": {
             tasks: {
               lint: { run: "eslint", glob: "*.ts", exclude: ["a/**", "b/**"] },
-              test: { run: "vitest" },
+              test: { run: "vitest", symlinks: false },
+              links: { run: "ls", symlinks: true },
             },
           },
         },
@@ -293,6 +311,7 @@ describe("normalizeConfig", () => {
               exclude: ["a/**", "b/**"],
             },
             { name: "test", run: "vitest" },
+            { name: "links", run: "ls", symlinks: true },
           ],
         },
       },

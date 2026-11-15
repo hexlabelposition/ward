@@ -17,6 +17,11 @@ export type TaskConfig = {
   glob?: string | readonly string[];
   /** Files to leave out even when `glob` matches them, same pattern rules. */
   exclude?: string | readonly string[];
+  /**
+   * Pass symlinks to the task too. Off by default: a formatter would rewrite
+   * the file the link points to.
+   */
+  symlinks?: boolean;
 };
 
 /**

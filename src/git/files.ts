@@ -1,9 +1,22 @@
 import { git, type GitOptions } from "./exec.ts";
 
+/** A file from one of the lists below. */
+export type GitFile = {
+  /** Relative to the repo root, `/` separators. */
+  path: string;
+  /** Stored by git as a symlink (mode `120000`), whatever the platform. */
+  symlink: boolean;
+};
+
+const SYMLINK = "120000";
+/** A submodule: a commit, not a file a task could read. */
+const GITLINK = "160000";
+
 /**
  * Files staged for the next commit: added, copied, modified or renamed
  * (`--diff-filter=ACMR`). Deleted files are left out: there is nothing to run
- * a task on. A renamed file is listed under its new path.
+ * a task on, and so are submodules. A renamed file is listed under its new
+ * path. `symlink` is the staged mode.
  *
  * Paths are relative to the repo root, whatever `cwd` is, with `/` separators
  * on every platform. `-z` keeps them unquoted, so spaces, newlines and
@@ -11,22 +24,45 @@ import { git, type GitOptions } from "./exec.ts";
  *
  * Works before the first commit: the index is compared with an empty tree.
  */
-export function getStagedFiles(options: GitOptions = {}): string[] {
+export function getStagedFiles(options: GitOptions = {}): GitFile[] {
   const out = git(
-    ["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"],
+    ["diff", "--cached", "--raw", "-z", "--diff-filter=ACMR"],
     options,
   );
-  return splitNul(out);
+  // `:<old mode> <new mode> <old sha> <new sha> <status>` NUL `<path>` NUL,
+  // with a second path (the new one) for renames and copies.
+  const files: GitFile[] = [];
+  const fields = splitNul(out);
+  for (let i = 0; i < fields.length; i++) {
+    const [, mode = "", , , status = ""] = (fields[i] ?? "").split(" ");
+    if (status.startsWith("R") || status.startsWith("C")) i++;
+    const path = fields[++i];
+    if (path !== undefined) files.push(...toFile(mode, path));
+  }
+  return files;
 }
 
 /**
- * Every file in the index (`git ls-files`), relative to the repo root even
- * when `cwd` is a subdirectory. A conflicted file is listed once, not once per
- * stage.
+ * Every file in the index (`git ls-files`) except submodules, relative to the
+ * repo root even when `cwd` is a subdirectory. A conflicted file is listed
+ * once, not once per stage.
  */
-export function getAllFiles(options: GitOptions = {}): string[] {
-  const out = git(["ls-files", "-z", "--full-name", "--", ":/"], options);
-  return unique(splitNul(out));
+export function getAllFiles(options: GitOptions = {}): GitFile[] {
+  const out = git(
+    ["ls-files", "--stage", "-z", "--full-name", "--", ":/"],
+    options,
+  );
+  // `<mode> <sha> <stage>` TAB `<path>`
+  const files = new Map<string, GitFile>();
+  for (const entry of splitNul(out)) {
+    const tab = entry.indexOf("\t");
+    const path = entry.slice(tab + 1);
+    if (files.has(path)) continue;
+    for (const file of toFile(entry.slice(0, entry.indexOf(" ")), path)) {
+      files.set(path, file);
+    }
+  }
+  return [...files.values()];
 }
 
 /** One line of `pre-push` stdin: `<local ref> <local sha> <remote ref> <remote sha>`. */
@@ -63,6 +99,7 @@ export function parsePushInput(input: string): PushUpdate[] {
 /**
  * Files changed by the commits a push sends, as they are in the pushed
  * commit: added, copied, modified or renamed, and still present there.
+ * Submodules are left out; `symlink` is the mode in the pushed commit.
  *
  * The pushed commits are those reachable from the local sha but not from the
  * remote sha or any remote-tracking branch of `remote`. So a new branch only
@@ -78,8 +115,8 @@ export function getPushFiles(
   updates: readonly PushUpdate[],
   remote: string,
   options: GitOptions = {},
-): string[] {
-  const files: string[] = [];
+): GitFile[] {
+  const files = new Map<string, GitFile>();
   for (const { localSha, remoteSha } of updates) {
     if (isZeroSha(localSha)) continue; // ref deletion
 
@@ -107,18 +144,28 @@ export function getPushFiles(
     );
     if (changed.length === 0) continue;
 
-    // Drop files a later commit deleted or renamed away.
-    const present = new Set(
-      splitNul(
-        git(
-          ["ls-tree", "-r", "-z", "--name-only", "--full-tree", localSha],
-          options,
-        ),
-      ),
-    );
-    files.push(...changed.filter((path) => present.has(path)));
+    // Modes in the pushed commit; files a later commit deleted or renamed
+    // away are not there.
+    const modes = new Map<string, string>();
+    const tree = git(["ls-tree", "-r", "-z", "--full-tree", localSha], options);
+    for (const entry of splitNul(tree)) {
+      // `<mode> <type> <sha>` TAB `<path>`
+      const tab = entry.indexOf("\t");
+      modes.set(entry.slice(tab + 1), entry.slice(0, entry.indexOf(" ")));
+    }
+    for (const path of changed) {
+      const mode = modes.get(path);
+      if (mode === undefined || files.has(path)) continue;
+      for (const file of toFile(mode, path)) files.set(path, file);
+    }
   }
-  return unique(files);
+  return [...files.values()];
+}
+
+/** The file for a git mode, or nothing for a submodule. */
+function toFile(mode: string, path: string): GitFile[] {
+  if (mode === GITLINK) return [];
+  return [{ path, symlink: mode === SYMLINK }];
 }
 
 function hasCommit(sha: string, options: GitOptions): boolean {
@@ -141,8 +188,4 @@ function isZeroSha(sha: string): boolean {
 /** Split `-z` output; the list ends with a NUL, so drop the empty tail. */
 function splitNul(out: string): string[] {
   return out.split("\0").filter((path) => path !== "");
-}
-
-function unique(paths: string[]): string[] {
-  return [...new Set(paths)];
 }

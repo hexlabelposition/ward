@@ -69,7 +69,7 @@ Done when: this repo runs its own Prettier and ESLint through Ward on staged fil
 - [x] **W27** `glob` / `exclude` per task (picomatch), invalid glob is a config error
 - [x] **W29** `{staged_files}`, `{push_files}`, `{all_files}` placeholders
 - [x] **W32** Skip task when no files match
-- [ ] **W66** Ignore symlinks by default, `symlinks: true` to include
+- [x] **W66** Ignore symlinks by default, `symlinks: true` to include
 - [ ] **W31** Argument chunking for long file lists (Windows limit)
 - [ ] **W30** `git add` files fixed by tasks; `stageFixed: false` opts out per task
 - [ ] **W67** Function tasks: JS/TS function gets the file list (TS config only)

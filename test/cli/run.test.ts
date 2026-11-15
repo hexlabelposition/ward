@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, realpathSync } from "node:fs";
+import { chmodSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
@@ -337,6 +337,31 @@ describe("ward run", () => {
     repo.git("add", "src/a.ts");
 
     expect(ward(repo, ["run", "pre-commit"]).stdout).toBe("tsc\n");
+  });
+
+  posixOnly("leaves out symlinks unless the task sets `symlinks: true`", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "target.md": "t\n" });
+    writeHook(repo, {
+      tasks: {
+        plain: {
+          run: `${node(PRINT_ARGS)} plain {staged_files}`,
+          glob: "*.md",
+        },
+        links: {
+          run: `${node(PRINT_ARGS)} links {staged_files}`,
+          glob: "*.md",
+          symlinks: true,
+        },
+      },
+    });
+    symlinkSync("target.md", join(repo.dir, "link.md"));
+    repo.write("a.md", "a\n");
+    repo.git("add", "link.md", "a.md");
+
+    expect(ward(repo, ["run", "pre-commit"]).stdout).toBe(
+      "plain|a.md\nlinks|a.md|link.md\n",
+    );
   });
 
   it("passes all tracked files with {all_files}", () => {

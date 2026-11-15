@@ -206,7 +206,7 @@ Placeholders expand in one pass, so a file named `{1}.ts` is not expanded again.
 
 A task's `glob` / `exclude` pick its files from the source (`runner/match.ts`, picomatch). A pattern without `/` matches the file name in any directory (`*.ts`), as in `.gitignore`; a pattern with `/` matches the path from the repo root (`src/**/*.ts`). Dotfiles match like other files. A task whose placeholders get no files is skipped, so `eslint {staged_files}` never runs on the whole project. A task with `glob` / `exclude` and no placeholder (`tsc`) runs only when a file of the hook matches: staged files in `pre-commit`, push files in `pre-push`; in other hooks it needs a placeholder (config error). Unbalanced brackets and patterns starting with `./` or `/` are config errors. picomatch is loaded only when the config has patterns.
 
-Symlinks are dropped unless the task sets `symlinks: true`.
+Symlinks are dropped unless the task sets `symlinks: true`: a formatter would rewrite the file the link points to. A symlink is a file git stores with mode `120000` (staged, pushed or index mode, not `lstat`), so it works for files not on disk and on Windows without symlink support. Submodules (mode `160000`) are never passed to tasks.
 
 ### Partial staging and backup (the hard part)
 
