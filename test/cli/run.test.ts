@@ -296,6 +296,49 @@ describe("ward run", () => {
     });
   });
 
+  it("skips a task when no files match", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    writeHook(repo, {
+      tasks: {
+        ts: { run: `${node(PRINT_ARGS)} ts {staged_files}`, glob: "*.ts" },
+        all: { run: `${node(PRINT_ARGS)} all {staged_files}` },
+        never: { run: node("process.exit(1)"), glob: "*.ts" },
+        always: { run: node("console.log('always')") },
+      },
+    });
+    repo.write("a.md", "a\n");
+    repo.git("add", "a.md");
+
+    expect(ward(repo, ["run", "pre-commit"])).toEqual({
+      status: 0,
+      stdout: "all|a.md\nalways\n",
+      stderr: "",
+    });
+  });
+
+  it("skips a task when nothing is staged", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    writeHook(repo, [node("process.exit(1)") + " {staged_files}"]);
+    repo.git("add", "package.json");
+    repo.git("commit", "--quiet", "--no-verify", "-m", "config");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+  });
+
+  it("runs a task with glob and no placeholder when a staged file matches", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    writeHook(repo, {
+      tasks: { tsc: { run: node("console.log('tsc')"), glob: "*.ts" } },
+    });
+    repo.write("src/a.ts", "a\n");
+    repo.git("add", "src/a.ts");
+
+    expect(ward(repo, ["run", "pre-commit"]).stdout).toBe("tsc\n");
+  });
+
   it("passes all tracked files with {all_files}", () => {
     using repo = createTempRepo();
     repo.commit("init", { "a.ts": "a\n", "b.md": "b\n" });

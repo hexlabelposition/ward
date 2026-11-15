@@ -117,6 +117,25 @@ describe("validateConfig", () => {
     ]);
   });
 
+  it("needs a file placeholder for `glob` outside `pre-commit` and `pre-push`", () => {
+    expect(
+      issues({
+        hooks: {
+          "pre-commit": { tasks: { tsc: { run: "tsc", glob: "*.ts" } } },
+          "pre-push": { tasks: { test: { run: "vitest", exclude: "*.md" } } },
+          "post-merge": {
+            tasks: {
+              install: { run: "npm i", glob: "package-lock.json" },
+              lint: { run: "eslint {all_files}", glob: "*.ts" },
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      "hooks.post-merge.tasks.install: `glob` and `exclude` need `{staged_files}`, `{push_files}` or `{all_files}` in `run` outside `pre-commit` and `pre-push`",
+    ]);
+  });
+
   it("reports invalid patterns", () => {
     expect(
       issues({

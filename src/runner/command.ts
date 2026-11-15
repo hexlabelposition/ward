@@ -16,6 +16,17 @@ export type ExpandValues = {
   files?: Readonly<Partial<Record<FileSource, readonly string[]>>>;
 };
 
+/**
+ * Files a task with `glob` / `exclude` but no file placeholder is matched
+ * against, to decide whether it runs. Other hooks have no such files.
+ */
+export const DEFAULT_FILE_SOURCE: Readonly<
+  Partial<Record<string, FileSource>>
+> = {
+  "pre-commit": "staged",
+  "pre-push": "push",
+};
+
 /** File sources a command uses, in no particular order. */
 export function fileSources(command: string): Set<FileSource> {
   const sources = new Set<FileSource>();

@@ -1,4 +1,5 @@
 import { HOOKS, type HookName, isHookName } from "../hooks/list.ts";
+import { DEFAULT_FILE_SOURCE, fileSources } from "../runner/command.ts";
 import { checkGlob } from "../runner/match.ts";
 import type { Config, HookConfig } from "./define.ts";
 import { ConfigError } from "./errors.ts";
@@ -173,6 +174,21 @@ function checkTask(
     return;
   }
   checkCommand(task.run, hook, join(path, "run"), report);
+
+  const filtered =
+    Object.hasOwn(task, "glob") || Object.hasOwn(task, "exclude");
+  if (
+    filtered &&
+    typeof task.run === "string" &&
+    fileSources(task.run).size === 0 &&
+    DEFAULT_FILE_SOURCE[hook] === undefined
+  ) {
+    // Nothing to match the patterns against, so they would do nothing.
+    report(
+      path,
+      "`glob` and `exclude` need `{staged_files}`, `{push_files}` or `{all_files}` in `run` outside `pre-commit` and `pre-push`",
+    );
+  }
 }
 
 /** `glob` / `exclude`: one pattern or a non-empty list of them. */

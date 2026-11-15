@@ -1,4 +1,4 @@
-import type { Hook } from "../config/schema.ts";
+import type { Hook, Task } from "../config/schema.ts";
 import {
   getAllFiles,
   getPushFiles,
@@ -7,7 +7,12 @@ import {
 } from "../git/files.ts";
 import type { GitOptions } from "../git/exec.ts";
 import type { HookName } from "../hooks/list.ts";
-import { expandCommand, type FileSource, fileSources } from "./command.ts";
+import {
+  DEFAULT_FILE_SOURCE,
+  expandCommand,
+  type FileSource,
+  fileSources,
+} from "./command.ts";
 import { execCommand } from "./exec.ts";
 import { matchFiles } from "./match.ts";
 
@@ -29,9 +34,14 @@ export type RunHookOptions = {
  * gave; 0 when all passed.
  *
  * File placeholders expand to the files of their source that match the
- * task's `glob` / `exclude`. Each source is read from git once per run, when
- * a task first needs it. `{push_files}` reads the `pre-push` refs from stdin,
- * so every task then gets a copy of it on its own stdin.
+ * task's `glob` / `exclude`. A task whose placeholders get no files is
+ * skipped, so `eslint {staged_files}` never runs on the whole project. A task
+ * with `glob` / `exclude` and no placeholder is matched against the hook's
+ * files (`DEFAULT_FILE_SOURCE`) and skipped when none match.
+ *
+ * Each source is read from git once per run, when a task first needs it.
+ * Push files come from the `pre-push` refs on stdin, so every task then gets
+ * a copy of it on its own stdin.
  */
 export async function runHook({
   hook,
@@ -41,7 +51,7 @@ export async function runHook({
   env = process.env,
   readStdin = readProcessStdin,
 }: RunHookOptions): Promise<number> {
-  const sources = new Set(tasks.flatMap((task) => [...fileSources(task.run)]));
+  const sources = new Set(tasks.flatMap((task) => taskSources(task, hook)));
   // Read before the first task: a task could otherwise consume it.
   const input = sources.has("push") ? await readStdin() : undefined;
 
@@ -58,9 +68,11 @@ export async function runHook({
 
   for (const task of tasks) {
     const files: Partial<Record<FileSource, readonly string[]>> = {};
-    for (const source of fileSources(task.run)) {
+    for (const source of taskSources(task, hook)) {
       files[source] = matchFiles(filesOf(source), task);
     }
+    const lists = Object.values(files);
+    if (lists.length > 0 && lists.every((list) => list.length === 0)) continue;
 
     const code = await execCommand(expandCommand(task.run, { args, files }), {
       cwd: root,
@@ -75,6 +87,18 @@ export async function runHook({
     }
   }
   return 0;
+}
+
+/**
+ * Sources a task's files come from: its placeholders, else the hook's files
+ * when it has `glob` / `exclude`. None means it always runs.
+ */
+function taskSources(task: Task, hook: HookName): FileSource[] {
+  const sources = [...fileSources(task.run)];
+  if (sources.length > 0) return sources;
+  const fallback = DEFAULT_FILE_SOURCE[hook];
+  const filtered = task.glob !== undefined || task.exclude !== undefined;
+  return filtered && fallback !== undefined ? [fallback] : [];
 }
 
 function listFiles(
