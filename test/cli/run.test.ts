@@ -20,6 +20,9 @@ function node(script: string): string {
   return `"${process.execPath}" -e "${script}"`;
 }
 
+/** Prints the arguments it gets, joined by `|`. */
+const PRINT_ARGS = "console.log(process.argv.slice(1).join('|'))";
+
 /** Write a `pre-commit` hook to the `package.json` section. */
 function writeHook(repo: TempRepo, hook: unknown) {
   repo.write(
@@ -265,6 +268,72 @@ describe("ward run", () => {
     });
 
     expect(stdout).toBe("refs\n");
+  });
+
+  it("passes staged files that match the task's glob", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "old.ts": "o\n" });
+    writeHook(repo, {
+      tasks: {
+        ts: {
+          run: `${node(PRINT_ARGS)} {staged_files}`,
+          glob: "*.ts",
+          exclude: "*.test.ts",
+        },
+        md: { run: `${node(PRINT_ARGS)} {staged_files}`, glob: "*.md" },
+      },
+    });
+    repo.write("src/a.ts", "a\n");
+    repo.write("src/a.test.ts", "t\n");
+    repo.write("my notes.md", "n\n");
+    repo.write("unstaged.ts", "u\n");
+    repo.git("add", "src", "my notes.md");
+
+    expect(ward(repo, ["run", "pre-commit"])).toEqual({
+      status: 0,
+      stdout: "src/a.ts\nmy notes.md\n",
+      stderr: "",
+    });
+  });
+
+  it("passes all tracked files with {all_files}", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n", "b.md": "b\n" });
+    writeHook(repo, [`${node(PRINT_ARGS)} {all_files}`]);
+    repo.git("add", "package.json");
+
+    expect(ward(repo, ["run", "pre-commit"]).stdout).toBe(
+      "a.ts|b.md|package.json\n",
+    );
+  });
+
+  it("passes pushed files and keeps stdin for the tasks", () => {
+    using repo = createTempRepo();
+    const origin = join(repo.dir, ".git", "origin.git");
+    repo.git("init", "--quiet", "--bare", origin);
+    repo.git("remote", "add", "origin", origin);
+    repo.commit("init", { "old.ts": "o\n" });
+    repo.git("push", "--quiet", "--no-verify", "origin", "main");
+    repo.write(
+      "ward.yml",
+      "hooks:\n" +
+        "  pre-push:\n" +
+        `    - ${JSON.stringify(`${node(PRINT_ARGS)} {push_files}`)}\n` +
+        `    - ${JSON.stringify(node("process.stdin.pipe(process.stdout)"))}\n`,
+    );
+    repo.commit("next", { "new.ts": "n\n" });
+
+    const sha = repo.git("rev-parse", "main");
+    const remoteSha = repo.git("rev-parse", "origin/main");
+    const input = `refs/heads/main ${sha} refs/heads/main ${remoteSha}\n`;
+    const { status, stdout } = spawnSync(
+      process.execPath,
+      [CLI, "run", "pre-push", "origin", origin],
+      { cwd: repo.dir, env: repo.env, encoding: "utf8", input },
+    );
+
+    expect(status).toBe(0);
+    expect(stdout).toBe(`new.ts|ward.yml\n${input}`);
   });
 
   posixOnly("exits with 128 + signal when a task is killed", () => {

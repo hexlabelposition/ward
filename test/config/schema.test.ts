@@ -102,6 +102,21 @@ describe("validateConfig", () => {
     ).toEqual([]);
   });
 
+  it("allows `{push_files}` in `pre-push` only", () => {
+    expect(
+      issues({
+        hooks: {
+          "pre-push": "eslint {push_files}",
+          "pre-commit": ["eslint {staged_files} {all_files}", "x {push_files}"],
+          "post-merge": { tasks: { lint: { run: "eslint {push_files}" } } },
+        },
+      }),
+    ).toEqual([
+      "hooks.pre-commit[1]: `{push_files}` is only available in `pre-push`",
+      "hooks.post-merge.tasks.lint.run: `{push_files}` is only available in `pre-push`",
+    ]);
+  });
+
   it("reports invalid patterns", () => {
     expect(
       issues({

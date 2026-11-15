@@ -93,18 +93,23 @@ function checkConfig(raw: unknown, report: Report): void {
       report(path, `unknown hook${suggest(hook, HOOKS)}`);
       continue;
     }
-    checkHook(value, path, report);
+    checkHook(value, hook, path, report);
   }
 }
 
-function checkHook(value: unknown, path: string, report: Report): void {
+function checkHook(
+  value: unknown,
+  hook: HookName,
+  path: string,
+  report: Report,
+): void {
   if (typeof value === "string") {
-    checkCommand(value, path, report);
+    checkCommand(value, hook, path, report);
     return;
   }
   if (Array.isArray(value)) {
     value.forEach((command: unknown, i) => {
-      checkCommand(command, `${path}[${String(i)}]`, report);
+      checkCommand(command, hook, `${path}[${String(i)}]`, report);
     });
     return;
   }
@@ -135,11 +140,16 @@ function checkHook(value: unknown, path: string, report: Report): void {
   for (const [name, task] of Object.entries(tasks)) {
     const taskPath = join(tasksPath, name);
     if (name.trim() === "") report(taskPath, "task name is empty");
-    checkTask(task, taskPath, report);
+    checkTask(task, hook, taskPath, report);
   }
 }
 
-function checkTask(task: unknown, path: string, report: Report): void {
+function checkTask(
+  task: unknown,
+  hook: HookName,
+  path: string,
+  report: Report,
+): void {
   if (!isObject(task)) {
     report(path, `expected \`{ run: "…" }\`, got ${describe(task)}`);
     return;
@@ -162,7 +172,7 @@ function checkTask(task: unknown, path: string, report: Report): void {
     report(join(path, "run"), "function tasks are not supported yet");
     return;
   }
-  checkCommand(task.run, join(path, "run"), report);
+  checkCommand(task.run, hook, join(path, "run"), report);
 }
 
 /** `glob` / `exclude`: one pattern or a non-empty list of them. */
@@ -198,11 +208,19 @@ function checkPattern(pattern: string, path: string, report: Report): void {
     report(path, `invalid pattern "${pattern}": ${problem}`);
 }
 
-function checkCommand(value: unknown, path: string, report: Report): void {
+function checkCommand(
+  value: unknown,
+  hook: HookName,
+  path: string,
+  report: Report,
+): void {
   if (typeof value !== "string") {
     report(path, `expected a command string, got ${describe(value)}`);
   } else if (value.trim() === "") {
     report(path, "command is empty");
+  } else if (hook !== "pre-push" && value.includes("{push_files}")) {
+    // Only `pre-push` gets the refs being pushed.
+    report(path, "`{push_files}` is only available in `pre-push`");
   }
 }
 

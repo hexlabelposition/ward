@@ -202,6 +202,8 @@ type Task = {
 | `{all_files}`    | `git ls-files -z`                                                                                                                                        |
 | `--from-ref`     | `git diff --name-only -z <ref>...HEAD`                                                                                                                   |
 
+Placeholders expand in one pass, so a file named `{1}.ts` is not expanded again. Each source is read from git once per run, when a task first uses it. `{push_files}` is only valid in `pre-push`: Ward reads the refs from stdin before the first task and gives every task a copy on its stdin.
+
 A task's `glob` / `exclude` pick its files from the source (`runner/match.ts`, picomatch). A pattern without `/` matches the file name in any directory (`*.ts`), as in `.gitignore`; a pattern with `/` matches the path from the repo root (`src/**/*.ts`). Dotfiles match like other files. Unbalanced brackets and patterns starting with `./` or `/` are config errors. picomatch is loaded only when the config has patterns.
 
 Symlinks are dropped unless the task sets `symlinks: true`.
