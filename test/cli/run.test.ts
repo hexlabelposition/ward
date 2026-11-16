@@ -587,7 +587,7 @@ export default { hooks: { "pre-commit": { tasks: { format: {
 
     const { status, stdout } = ward(repo, ["run", "pre-commit"]);
     expect(status).toBe(0);
-    expect(stdout.split("\n").sort()).toEqual(["", "a", "b"]);
+    expect(stdout.split("\n").sort()).toEqual(["", "a | a", "b | b"]);
   });
 
   it("runs every parallel task to the end and exits with the first failure in config order", () => {
@@ -603,7 +603,7 @@ export default { hooks: { "pre-commit": { tasks: { format: {
 
     const { status, stdout, stderr } = ward(repo, ["run", "pre-commit"]);
     expect(status).toBe(3);
-    expect(stdout).toBe("ok\n");
+    expect(stdout).toBe("ok   | ok\n");
     expect(stderr).toBe(
       "ward: pre-commit failed: fast (exit 4)\n" +
         "ward: pre-commit failed: slow (exit 3)\n",
@@ -631,7 +631,11 @@ export default { hooks: { "pre-commit": { tasks: { format: {
       "old new\n",
     );
     expect(status).toBe(0);
-    expect(stdout.split("\n").sort()).toEqual(["", "a:old new", "b:old new"]);
+    expect(stdout.split("\n").sort()).toEqual([
+      "",
+      "a | a:old new",
+      "b | b:old new",
+    ]);
   });
 
   it("stages files fixed by parallel tasks", () => {
@@ -652,6 +656,34 @@ export default { hooks: { "pre-commit": { tasks: { format: {
     expect(repo.git("show", ":a.ts")).toBe("A");
     expect(repo.git("show", ":b.md")).toBe("B");
     expect(repo.git("diff", "--name-only")).toBe("");
+  });
+
+  it("prefixes each line of parallel output with the task name", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "ward.config.ts",
+      `export default { hooks: { "pre-commit": { parallel: true, tasks: {
+  lint: { run: ${JSON.stringify(node("process.stdout.write('one\\ntw'); setTimeout(() => process.stdout.write('o\\nend'), 100)"))} },
+  "type check": { run: ${JSON.stringify(node("console.error('bad\\n\\nworse'); process.exit(2)"))} },
+  fn: { run: () => { throw new Error("no\\nway"); } },
+} } } };\n`,
+    );
+
+    const { status, stdout, stderr } = ward(repo, ["run", "pre-commit"]);
+    expect(status).toBe(2);
+    expect(stdout).toBe(
+      "lint       | one\nlint       | two\nlint       | end\n",
+    );
+    expect(stderr.split("\n").sort()).toEqual([
+      "",
+      "fn         | no",
+      "fn         | way",
+      "type check | ",
+      "type check | bad",
+      "type check | worse",
+      "ward: pre-commit failed: fn (exit 1)",
+      "ward: pre-commit failed: type check (exit 2)",
+    ]);
   });
 
   it("passes all tracked files with {all_files}", () => {

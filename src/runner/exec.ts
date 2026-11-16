@@ -1,6 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { constants } from "node:os";
 import type { TaskContext, TaskFunction } from "../config/define.ts";
+import { prefixLines } from "./output.ts";
+
+/** Put before each line of a task's output (parallel mode). */
+export type Prefixes = { stdout: string; stderr: string };
 
 export type ExecOptions = {
   cwd: string;
@@ -10,6 +14,11 @@ export type ExecOptions = {
    * when Ward has already read it (`pre-push` refs for `{push_files}`).
    */
   input?: string | undefined;
+  /**
+   * Pipe the command's output and write it line by line with these
+   * prefixes, instead of letting it write to the hook's output directly.
+   */
+  prefix?: Prefixes | undefined;
 };
 
 /** Commands running now, for the signal handlers below. */
@@ -43,6 +52,8 @@ function trackChild(child: ChildProcess): () => void {
  * and stdin are the hook's own, so the command prints as it runs and can read
  * what git passes on stdin (`pre-push`); with `input`, stdin is that text.
  *
+ * With `prefix`, output goes through Ward instead, one whole line at a time.
+ *
  * A command killed by a signal returns `128 + signal number`, as shells do.
  * A command that is not found is the shell's exit code (127 in `sh`).
  *
@@ -50,15 +61,26 @@ function trackChild(child: ChildProcess): () => void {
  */
 export function execCommand(
   command: string,
-  { cwd, env = process.env, input }: ExecOptions,
+  { cwd, env = process.env, input, prefix }: ExecOptions,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
+    const output = prefix === undefined ? "inherit" : "pipe";
     const child = spawn(command, {
       cwd,
       env,
       shell: true,
-      stdio: [input === undefined ? "inherit" : "pipe", "inherit", "inherit"],
+      stdio: [input === undefined ? "inherit" : "pipe", output, output],
     });
+    const out =
+      prefix &&
+      prefixLines(prefix.stdout, (text) => process.stdout.write(text));
+    const err =
+      prefix &&
+      prefixLines(prefix.stderr, (text) => process.stderr.write(text));
+    if (out && err) {
+      child.stdout?.on("data", out.write);
+      child.stderr?.on("data", err.write);
+    }
     if (input !== undefined) {
       // A command that exits without reading stdin closes the pipe: EPIPE.
       child.stdin?.on("error", () => undefined);
@@ -73,6 +95,9 @@ export function execCommand(
     });
     child.on("close", (code, signal) => {
       cleanup();
+      // All output has arrived by now: write the lines left without "\n".
+      out?.end();
+      err?.end();
       resolve(code ?? 128 + (signal ? constants.signals[signal] : 0));
     });
   });
@@ -80,20 +105,28 @@ export function execCommand(
 
 /**
  * Call a function task from `cwd` and return 0, or print what it threw and
- * return 1. Ward's working directory stays `cwd` afterwards: relative paths
+ * return 1, each line after `prefix` when given. What the function itself
+ * prints is not prefixed: it shares Ward's output. Ward's working directory stays `cwd` afterwards: relative paths
  * in `context.files` keep working in callbacks the function leaves behind.
  */
 export async function execFunction(
   run: TaskFunction,
   context: TaskContext,
   cwd: string,
+  prefix?: string,
 ): Promise<number> {
   try {
     process.chdir(cwd);
     await run(context);
     return 0;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    if (prefix === undefined) {
+      console.error(message);
+    } else {
+      const lines = prefixLines(prefix, (text) => process.stderr.write(text));
+      lines.write(`${message}\n`);
+    }
     return 1;
   }
 }

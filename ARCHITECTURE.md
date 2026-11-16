@@ -63,6 +63,8 @@ src/
 │  ├─ match.ts     # glob / exclude → files (picomatch), symlink filter
 │  ├─ command.ts   # placeholder expansion, chunking long arg lists
 │  ├─ exec.ts      # spawn commands / call function tasks, stream output
+│  ├─ output.ts    # line prefixes for parallel output
+│  ├─ fixed.ts     # find files changed by a task (stageFixed)
 │  ├─ graph.ts     # dependsOn ordering, root / affected packages
 │  ├─ cache.ts     # per-task file hash cache
 │  └─ run-hook.ts  # orchestrates one hook run
@@ -252,7 +254,7 @@ If `core.hooksPath` is set, git ignores `.git/hooks` → print a clear warning a
 - Placeholder expansion with chunking to stay under OS limits: 8000 characters on Windows (`cmd.exe` takes 8191), 100 000 bytes elsewhere (Linux caps one argument, the `sh -c` command, at 128 KiB). A longer command runs several times in a row, each with the next files of its longest list, and stops at the first failure.
 - File paths are passed relative to the working directory, properly quoted.
 - With `parallel: true` (object form of a hook), tasks run concurrently, respecting `dependsOn`. Every task is prepared first (file lists read, `stageFixed` snapshot taken), so no task sees another's changes in its list. All tasks run to the end; each failure is reported, and the exit code is the first failed task's in config order. The hook's stdin is read up front and every task gets a copy. Fixed files are staged as each task passes (`git add` is synchronous, so two never overlap); tasks that run at the same time should not change the same files.
-- Output is streamed; in parallel mode, prefixed with task name.
+- Output is streamed. In parallel mode Ward pipes it and writes whole lines only, each prefixed with the task name padded to the longest one (`lint      | …`), so lines of different tasks never mix; stdout stays stdout and stderr stays stderr. Names are colored when Ward's stream shows colors (terminal, no `NO_COLOR`), and commands get `FORCE_COLOR=1` then, since tools turn colors off for a pipe; a `FORCE_COLOR` or `NO_COLOR` set by the user wins. What a function task prints is not prefixed (it shares Ward's process); the error it throws is.
 - Tasks can be skipped by tag: `WARD_SKIP_TAGS=slow` or `--skip-tag slow`.
 
 ### Monorepo and task graph

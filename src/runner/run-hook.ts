@@ -15,8 +15,9 @@ import {
   type FileSource,
   fileSources,
 } from "./command.ts";
-import { execCommand, execFunction } from "./exec.ts";
+import { execCommand, execFunction, type Prefixes } from "./exec.ts";
 import { changedFiles, type Snapshot, snapshotFiles } from "./fixed.ts";
+import { colorEnv, taskPrefixes } from "./output.ts";
 import { matchFiles } from "./match.ts";
 
 export type RunHookOptions = {
@@ -40,7 +41,8 @@ export type RunHookOptions = {
  *
  * With `parallel`, all tasks start at once and every one runs to the end;
  * each failure is reported, and the exit code is that of the first failed
- * task in config order.
+ * task in config order. Their output is written line by line, each line
+ * prefixed with the task's name.
  *
  * File placeholders expand to the files of their source that match the
  * task's `glob` / `exclude`. Symlinks are left out unless the task sets
@@ -92,7 +94,10 @@ export async function runHook({
    * Read the task's files and snapshot them, then return a function that
    * runs it; `null` when it is skipped.
    */
-  const prepare = (task: Task): (() => Promise<number>) | null => {
+  const prepare = (
+    task: Task,
+    prefix?: Prefixes,
+  ): (() => Promise<number>) | null => {
     const files: Partial<Record<FileSource, readonly string[]>> = {};
     for (const source of taskSources(task, hook)) {
       const paths = filesOf(source)
@@ -119,11 +124,17 @@ export async function runHook({
           task.run,
           { files: [...list], args: [...args] },
           root,
+          prefix?.stderr,
         );
       } else {
         // Long file lists run as several commands, one after another.
         for (const command of expandCommandChunks(task.run, { args, files })) {
-          code = await execCommand(command, { cwd: root, env, input });
+          code = await execCommand(command, {
+            cwd: root,
+            env: prefix ? colorEnv(env) : env,
+            input,
+            prefix,
+          });
           if (code !== 0) break;
         }
       }
@@ -145,7 +156,10 @@ export async function runHook({
   if (parallel) {
     // Every task is prepared before the first one starts, so none of them
     // sees files another task already changed.
-    const jobs = tasks.map(prepare);
+    // Output is prefixed with the task's name, so it is clear what printed
+    // what while they run together.
+    const names = tasks.map((task) => task.name);
+    const jobs = tasks.map((task, i) => prepare(task, taskPrefixes(names, i)));
     const codes = await Promise.all(
       jobs.map((job) => (job ? job() : Promise.resolve(0))),
     );
