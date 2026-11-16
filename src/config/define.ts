@@ -61,6 +61,11 @@ export type HookConfig =
   | readonly string[]
   | {
       tasks: Readonly<Record<string, TaskConfig>>;
+      /**
+       * Start all tasks at once and let each run to the end; the hook fails
+       * if any of them fails. Tasks run one after another by default.
+       */
+      parallel?: boolean;
     };
 
 /** Contents of `ward.config.ts`, `ward.yml` or the `"ward"` section of `package.json`. */

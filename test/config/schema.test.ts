@@ -75,14 +75,14 @@ describe("validateConfig", () => {
         extends: ["ward:ts"],
         hooks: {
           "pre-commit": {
-            parallel: true,
+            backup: false,
             tasks: { lint: { run: "eslint", cache: true } },
           },
         },
       }),
     ).toEqual([
       "extends: not supported yet",
-      "hooks.pre-commit.parallel: not supported yet",
+      "hooks.pre-commit.backup: not supported yet",
       "hooks.pre-commit.tasks.lint.cache: not supported yet",
     ]);
   });
@@ -178,6 +178,19 @@ describe("validateConfig", () => {
       "hooks.pre-commit.tasks.c.glob: list of patterns is empty",
       'hooks.pre-commit.tasks.c.exclude: invalid pattern "": pattern is empty',
       "hooks.pre-commit.tasks.d.exclude: expected a pattern or a list of patterns, got an object",
+    ]);
+  });
+
+  it("accepts `parallel` as a boolean only", () => {
+    expect(
+      issues({
+        hooks: {
+          "pre-commit": { parallel: true, tasks: {} },
+          "pre-push": { parallel: "yes", tasks: {} },
+        },
+      }),
+    ).toEqual([
+      "hooks.pre-push.parallel: expected true or false, got a string",
     ]);
   });
 
@@ -346,6 +359,22 @@ describe("normalizeConfig", () => {
             { name: "check", run: "prettier --check", stageFixed: false },
           ],
         },
+      },
+    });
+  });
+
+  it("keeps `parallel: true` only", () => {
+    expect(
+      normalizeConfig({
+        hooks: {
+          "pre-commit": { parallel: true, tasks: { a: { run: "a" } } },
+          "pre-push": { parallel: false, tasks: {} },
+        },
+      }),
+    ).toEqual({
+      hooks: {
+        "pre-commit": { tasks: [{ name: "a", run: "a" }], parallel: true },
+        "pre-push": { tasks: [] },
       },
     });
   });

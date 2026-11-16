@@ -12,11 +12,17 @@ import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 
 const CLI = resolve(import.meta.dirname, "../../src/cli/index.ts");
 
-function ward(repo: TempRepo, args: string[], cwd = repo.dir, env = repo.env) {
+function ward(
+  repo: TempRepo,
+  args: string[],
+  cwd = repo.dir,
+  env = repo.env,
+  input?: string,
+) {
   const { status, stdout, stderr } = spawnSync(
     process.execPath,
     [CLI, ...args],
-    { cwd, env, encoding: "utf8" },
+    { cwd, env, encoding: "utf8", input },
   );
   return { status, stdout, stderr };
 }
@@ -34,6 +40,16 @@ function format(exitCode = 0): string {
   return node(
     "const fs = require('fs'); for (const f of process.argv.slice(1)) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').toUpperCase()); process.exitCode = " +
       String(exitCode),
+  );
+}
+
+/**
+ * Creates `<name>.started`, then waits up to 10 s for `<other>.started`:
+ * passes only when the two run at the same time.
+ */
+function meet(name: string, other: string): string {
+  return node(
+    `const fs = require('fs'); fs.writeFileSync('${name}.started', ''); const end = Date.now() + 10000; const wait = () => fs.existsSync('${other}.started') ? console.log('${name}') : Date.now() > end ? process.exit(1) : setTimeout(wait, 20); wait()`,
   );
 }
 
@@ -560,6 +576,82 @@ export default { hooks: { "pre-commit": { tasks: { format: {
 
     expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
     expect(repo.git("show", ":a.ts")).toBe("A");
+  });
+
+  it("runs tasks at the same time with `parallel: true`", () => {
+    using repo = createTempRepo();
+    writeHook(repo, {
+      parallel: true,
+      tasks: { a: { run: meet("a", "b") }, b: { run: meet("b", "a") } },
+    });
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit"]);
+    expect(status).toBe(0);
+    expect(stdout.split("\n").sort()).toEqual(["", "a", "b"]);
+  });
+
+  it("runs every parallel task to the end and exits with the first failure in config order", () => {
+    using repo = createTempRepo();
+    writeHook(repo, {
+      parallel: true,
+      tasks: {
+        slow: { run: node("setTimeout(() => process.exit(3), 300)") },
+        fast: { run: "exit 4" },
+        ok: { run: node("setTimeout(() => console.log('ok'), 500)") },
+      },
+    });
+
+    const { status, stdout, stderr } = ward(repo, ["run", "pre-commit"]);
+    expect(status).toBe(3);
+    expect(stdout).toBe("ok\n");
+    expect(stderr).toBe(
+      "ward: pre-commit failed: fast (exit 4)\n" +
+        "ward: pre-commit failed: slow (exit 3)\n",
+    );
+  });
+
+  it("gives each parallel task a copy of the hook's stdin", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "ward.yml",
+      "hooks:\n  post-rewrite:\n    parallel: true\n    tasks:\n" +
+        ["a", "b"]
+          .map(
+            (name) =>
+              `      ${name}:\n        run: ${JSON.stringify(node(`let s = ''; process.stdin.on('data', (d) => s += d).on('end', () => console.log('${name}:' + s.trim()))`))}\n`,
+          )
+          .join(""),
+    );
+
+    const { status, stdout } = ward(
+      repo,
+      ["run", "post-rewrite", "amend"],
+      repo.dir,
+      repo.env,
+      "old new\n",
+    );
+    expect(status).toBe(0);
+    expect(stdout.split("\n").sort()).toEqual(["", "a:old new", "b:old new"]);
+  });
+
+  it("stages files fixed by parallel tasks", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    writeHook(repo, {
+      parallel: true,
+      tasks: {
+        ts: { run: `${format()} {staged_files}`, glob: "*.ts" },
+        md: { run: `${format()} {staged_files}`, glob: "*.md" },
+      },
+    });
+    repo.write("a.ts", "a\n");
+    repo.write("b.md", "b\n");
+    repo.git("add", ".");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("show", ":a.ts")).toBe("A");
+    expect(repo.git("show", ":b.md")).toBe("B");
+    expect(repo.git("diff", "--name-only")).toBe("");
   });
 
   it("passes all tracked files with {all_files}", () => {

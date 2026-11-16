@@ -26,6 +26,8 @@ export type Task = {
 export type Hook = {
   /** In config order. */
   readonly tasks: readonly Task[];
+  /** Run the tasks at once; one after another when absent. */
+  readonly parallel?: boolean;
 };
 
 export type ResolvedConfig = {
@@ -38,13 +40,13 @@ export type ResolvedConfig = {
  */
 const PLANNED = {
   config: ["extends"],
-  hook: ["parallel", "backup", "revert"],
+  hook: ["backup", "revert"],
   task: ["root", "tags", "cache", "dependsOn"],
 } as const;
 
 const KNOWN = {
   config: ["hooks"],
-  hook: ["tasks"],
+  hook: ["tasks", "parallel"],
   task: ["run", "glob", "exclude", "symlinks", "stageFixed"],
 } as const;
 
@@ -128,7 +130,15 @@ function checkHook(
   }
 
   for (const key of Object.keys(value)) {
-    if (key !== "tasks") report(join(path, key), unknownOption(key, "hook"));
+    if (!(KNOWN.hook as readonly string[]).includes(key)) {
+      report(join(path, key), unknownOption(key, "hook"));
+    }
+  }
+  if (Object.hasOwn(value, "parallel") && typeof value.parallel !== "boolean") {
+    report(
+      join(path, "parallel"),
+      `expected true or false, got ${describe(value.parallel)}`,
+    );
   }
   if (!Object.hasOwn(value, "tasks")) {
     report(path, "missing `tasks`");
@@ -331,7 +341,11 @@ export function normalizeConfig(config: Config): ResolvedConfig {
     HookName,
     HookConfig,
   ][]) {
-    hooks[name] = { tasks: normalizeTasks(value) };
+    const parallel = isObjectForm(value) && value.parallel === true;
+    hooks[name] = {
+      tasks: normalizeTasks(value),
+      ...(parallel && { parallel: true }),
+    };
   }
   return { hooks };
 }
@@ -351,6 +365,12 @@ function normalizeTasks(value: HookConfig): Task[] {
 
 function toList(value: string | readonly string[]): readonly string[] {
   return typeof value === "string" ? [value] : [...value];
+}
+
+function isObjectForm(
+  value: HookConfig,
+): value is Exclude<HookConfig, string | readonly string[]> {
+  return typeof value === "object" && !isCommandList(value);
 }
 
 // `Array.isArray` does not narrow `readonly string[]` out of a union.

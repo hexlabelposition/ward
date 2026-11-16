@@ -27,6 +27,8 @@ export type RunHookOptions = {
   /** Repo root: the working directory of every task. */
   root: string;
   env?: NodeJS.ProcessEnv;
+  /** Run all tasks at once instead of one after another. */
+  parallel?: boolean;
   /** The hook's stdin, read in full. Defaults to `process.stdin`. */
   readStdin?: () => Promise<string>;
 };
@@ -35,6 +37,10 @@ export type RunHookOptions = {
  * Run the tasks of one hook in config order. Stops at the first task that
  * fails and returns its exit code, so git sees the same status the command
  * gave; 0 when all passed.
+ *
+ * With `parallel`, all tasks start at once and every one runs to the end;
+ * each failure is reported, and the exit code is that of the first failed
+ * task in config order.
  *
  * File placeholders expand to the files of their source that match the
  * task's `glob` / `exclude`. Symlinks are left out unless the task sets
@@ -63,11 +69,13 @@ export async function runHook({
   args = [],
   root,
   env = process.env,
+  parallel = false,
   readStdin = readProcessStdin,
 }: RunHookOptions): Promise<number> {
   const sources = new Set(tasks.flatMap((task) => taskSources(task, hook)));
-  // Read before the first task: a task could otherwise consume it.
-  const input = sources.has("push") ? await readStdin() : undefined;
+  // Read before the first task: a task could otherwise consume it. Parallel
+  // tasks can't share it either, so each gets a copy.
+  const input = sources.has("push") || parallel ? await readStdin() : undefined;
 
   const git: GitOptions = { cwd: root, env };
   const cache = new Map<FileSource, readonly GitFile[]>();
@@ -80,7 +88,11 @@ export async function runHook({
     return files;
   };
 
-  for (const task of tasks) {
+  /**
+   * Read the task's files and snapshot them, then return a function that
+   * runs it; `null` when it is skipped.
+   */
+  const prepare = (task: Task): (() => Promise<number>) | null => {
     const files: Partial<Record<FileSource, readonly string[]>> = {};
     for (const source of taskSources(task, hook)) {
       const paths = filesOf(source)
@@ -91,7 +103,7 @@ export async function runHook({
     const lists = Object.values(files);
     const always = typeof task.run === "function" && !isFiltered(task);
     if (!always && lists.length > 0 && lists.every((list) => !list.length)) {
-      continue;
+      return null;
     }
 
     const before: Snapshot | undefined =
@@ -99,31 +111,49 @@ export async function runHook({
         ? snapshotFiles(root, files.staged)
         : undefined;
 
-    let code = 0;
-    if (typeof task.run === "function") {
-      const [list = []] = lists;
-      code = await execFunction(
-        task.run,
-        { files: [...list], args: [...args] },
-        root,
-      );
-    } else {
-      // Long file lists run as several commands, one after another.
-      for (const command of expandCommandChunks(task.run, { args, files })) {
-        code = await execCommand(command, { cwd: root, env, input });
-        if (code !== 0) break;
+    return async () => {
+      let code = 0;
+      if (typeof task.run === "function") {
+        const [list = []] = lists;
+        code = await execFunction(
+          task.run,
+          { files: [...list], args: [...args] },
+          root,
+        );
+      } else {
+        // Long file lists run as several commands, one after another.
+        for (const command of expandCommandChunks(task.run, { args, files })) {
+          code = await execCommand(command, { cwd: root, env, input });
+          if (code !== 0) break;
+        }
       }
-    }
-    if (code !== 0) {
-      console.error(
-        `ward: ${hook} failed: ${task.name} (exit ${String(code)})`,
-      );
-      return code;
-    }
-    if (before !== undefined) {
-      const fixed = changedFiles(root, before);
-      if (fixed.length > 0) addFiles(fixed, git);
-    }
+      if (code !== 0) {
+        console.error(
+          `ward: ${hook} failed: ${task.name} (exit ${String(code)})`,
+        );
+        return code;
+      }
+      // Synchronous, so parallel tasks never run `git add` at the same time.
+      if (before !== undefined) {
+        const fixed = changedFiles(root, before);
+        if (fixed.length > 0) addFiles(fixed, git);
+      }
+      return 0;
+    };
+  };
+
+  if (parallel) {
+    // Every task is prepared before the first one starts, so none of them
+    // sees files another task already changed.
+    const jobs = tasks.map(prepare);
+    const codes = await Promise.all(
+      jobs.map((job) => (job ? job() : Promise.resolve(0))),
+    );
+    return codes.find((code) => code !== 0) ?? 0;
+  }
+  for (const task of tasks) {
+    const code = (await prepare(task)?.()) ?? 0;
+    if (code !== 0) return code;
   }
   return 0;
 }

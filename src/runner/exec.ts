@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { constants } from "node:os";
 import type { TaskContext, TaskFunction } from "../config/define.ts";
 
@@ -11,6 +11,32 @@ export type ExecOptions = {
    */
   input?: string | undefined;
 };
+
+/** Commands running now, for the signal handlers below. */
+const running = new Set<ChildProcess>();
+
+// Ctrl+C goes to the whole process group, so the commands get it too: wait
+// for them to finish instead of dying first. SIGTERM goes to Ward only, so
+// it is passed on. One pair of handlers for all commands, so parallel tasks
+// don't pile up listeners.
+const onSigint = () => undefined;
+const onSigterm = () => {
+  for (const child of running) child.kill("SIGTERM");
+};
+
+/** Track a running command; returns the function that stops tracking it. */
+function trackChild(child: ChildProcess): () => void {
+  if (running.size === 0) {
+    process.on("SIGINT", onSigint);
+    process.on("SIGTERM", onSigterm);
+  }
+  running.add(child);
+  return () => {
+    if (!running.delete(child) || running.size > 0) return;
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+  };
+}
 
 /**
  * Run a command through the system shell and return its exit code. Output
@@ -39,17 +65,7 @@ export function execCommand(
       child.stdin?.end(input);
     }
 
-    // Ctrl+C goes to the whole process group, so the command gets it too:
-    // wait for it to finish instead of dying first. SIGTERM goes to Ward
-    // only, so it is passed on.
-    const onSigint = () => undefined;
-    const onSigterm = () => child.kill("SIGTERM");
-    process.on("SIGINT", onSigint);
-    process.on("SIGTERM", onSigterm);
-    const cleanup = () => {
-      process.off("SIGINT", onSigint);
-      process.off("SIGTERM", onSigterm);
-    };
+    const cleanup = trackChild(child);
 
     child.on("error", (error) => {
       cleanup();

@@ -59,8 +59,9 @@ export async function run({
   const config = await readConfig(paths.root);
   const tasks = config?.hooks[hook]?.tasks ?? [];
   if (tasks.length === 0) return 0;
+  const parallel = config?.hooks[hook]?.parallel === true;
 
   // Imported only when there is something to run: keeps the no-op path fast.
   const { runHook } = await import("../runner/run-hook.ts");
-  return runHook({ hook, tasks, args, root: paths.root, env });
+  return runHook({ hook, tasks, args, root: paths.root, env, parallel });
 }
