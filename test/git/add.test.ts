@@ -22,20 +22,27 @@ describe("addFiles", () => {
 
   it("takes paths literally", () => {
     using repo = createTempRepo();
-    repo.commit("init", {
-      "[id].ts": "1\n",
-      "i.ts": "1\n",
-      "*.md": "1\n",
-      "a.md": "1\n",
-    });
-    for (const name of ["[id].ts", "i.ts", "*.md", "a.md"])
-      repo.write(name, "2\n");
+    repo.commit("init", { "[id].ts": "1\n", "i.ts": "1\n" });
+    for (const name of ["[id].ts", "i.ts"]) repo.write(name, "2\n");
 
-    addFiles(["[id].ts", "*.md"], { cwd: repo.dir, env: repo.env });
+    addFiles(["[id].ts"], { cwd: repo.dir, env: repo.env });
 
     expect(
       repo.git("diff", "--cached", "--name-only", "-z").split("\0"),
-    ).toEqual(["*.md", "[id].ts", ""]);
+    ).toEqual(["[id].ts", ""]);
+  });
+
+  // Windows doesn't allow `*` in file names.
+  it.skipIf(process.platform === "win32")("takes `*` literally", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "*.md": "1\n", "a.md": "1\n" });
+    for (const name of ["*.md", "a.md"]) repo.write(name, "2\n");
+
+    addFiles(["*.md"], { cwd: repo.dir, env: repo.env });
+
+    expect(
+      repo.git("diff", "--cached", "--name-only", "-z").split("\0"),
+    ).toEqual(["*.md", ""]);
   });
 
   it("stages a list longer than one call takes", () => {
