@@ -5,4 +5,6 @@ export type {
   HookConfig,
   HookName,
   TaskConfig,
+  TaskContext,
+  TaskFunction,
 } from "./config/define.ts";

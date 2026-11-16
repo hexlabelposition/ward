@@ -1,7 +1,7 @@
 import { HOOKS, type HookName, isHookName } from "../hooks/list.ts";
 import { DEFAULT_FILE_SOURCE, fileSources } from "../runner/command.ts";
 import { checkGlob } from "../runner/match.ts";
-import type { Config, HookConfig } from "./define.ts";
+import type { Config, HookConfig, TaskFunction } from "./define.ts";
 import { ConfigError } from "./errors.ts";
 
 /**
@@ -11,7 +11,8 @@ import { ConfigError } from "./errors.ts";
 export type Task = {
   /** Key in `{ tasks }`; for the string and array forms, the command itself. */
   readonly name: string;
-  readonly run: string;
+  /** Shell command, or a function (TS config only). */
+  readonly run: string | TaskFunction;
   /** Files the task runs on; all files when absent. */
   readonly glob?: readonly string[];
   /** Files dropped even when `glob` matches them. */
@@ -181,21 +182,27 @@ function checkTask(
     report(path, "missing `run`");
     return;
   }
+  const filtered =
+    Object.hasOwn(task, "glob") || Object.hasOwn(task, "exclude");
+  // Without files to match the patterns against, they would do nothing.
+  const noFiles = DEFAULT_FILE_SOURCE[hook] === undefined;
   if (typeof task.run === "function") {
-    report(join(path, "run"), "function tasks are not supported yet");
+    if (filtered && noFiles) {
+      report(
+        path,
+        "`glob` and `exclude` on a function task only work in `pre-commit` and `pre-push`",
+      );
+    }
     return;
   }
   checkCommand(task.run, hook, join(path, "run"), report);
 
-  const filtered =
-    Object.hasOwn(task, "glob") || Object.hasOwn(task, "exclude");
   if (
     filtered &&
+    noFiles &&
     typeof task.run === "string" &&
-    fileSources(task.run).size === 0 &&
-    DEFAULT_FILE_SOURCE[hook] === undefined
+    fileSources(task.run).size === 0
   ) {
-    // Nothing to match the patterns against, so they would do nothing.
     report(
       path,
       "`glob` and `exclude` need `{staged_files}`, `{push_files}` or `{all_files}` in `run` outside `pre-commit` and `pre-push`",
@@ -242,7 +249,12 @@ function checkCommand(
   path: string,
   report: Report,
 ): void {
-  if (typeof value !== "string") {
+  if (typeof value === "function") {
+    report(
+      path,
+      "a function needs a named task: `{ tasks: { name: { run: fn } } }`",
+    );
+  } else if (typeof value !== "string") {
     report(path, `expected a command string, got ${describe(value)}`);
   } else if (value.trim() === "") {
     report(path, "command is empty");

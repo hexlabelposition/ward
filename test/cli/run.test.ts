@@ -465,6 +465,103 @@ describe("ward run", () => {
     expect(repo.git("diff", "--name-only")).toBe("a.ts");
   });
 
+  it("calls a function task with the matching files and hook args", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    repo.write(
+      "ward.config.ts",
+      `export default { hooks: {
+  "pre-commit": { tasks: { check: {
+    run: (ctx: { files: string[]; args: string[] }) => {
+      console.log(JSON.stringify(ctx));
+      console.log(process.cwd());
+    },
+    glob: "src/**/*.ts",
+  } } },
+  "commit-msg": { tasks: { msg: { run: async (ctx: unknown) => {
+    await Promise.resolve();
+    console.log(JSON.stringify(ctx));
+  } } } },
+} };\n`,
+    );
+    repo.write("src/a b.ts", "");
+    repo.write("b.md", "");
+    repo.git("add", ".");
+
+    const { status, stdout } = ward(
+      repo,
+      ["run", "pre-commit"],
+      join(repo.dir, "src"),
+    );
+    expect(status).toBe(0);
+    const [ctx = "", cwd = ""] = stdout.trim().split("\n");
+    expect(JSON.parse(ctx)).toEqual({ files: ["src/a b.ts"], args: [] });
+    expect(realpathSync.native(cwd)).toBe(repo.dir);
+
+    expect(ward(repo, ["run", "commit-msg", "MSG"]).stdout).toBe(
+      '{"files":[],"args":["MSG"]}\n',
+    );
+  });
+
+  it("skips a function task with `glob` when no file matches", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    repo.write(
+      "ward.config.ts",
+      `export default { hooks: { "pre-commit": { tasks: {
+  js: { run: () => console.log("js"), glob: "*.js" },
+  any: { run: () => console.log("any") },
+} } } };\n`,
+    );
+    repo.git("add", ".");
+
+    expect(ward(repo, ["run", "pre-commit"]).stdout).toBe("any\n");
+  });
+
+  it("fails when a function task throws or rejects", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "ward.config.ts",
+      `export default { hooks: {
+  "pre-commit": { tasks: {
+    check: { run: () => { throw new Error("2 files have no license"); } },
+    next: { run: () => console.log("next") },
+  } },
+  "pre-push": { tasks: { check: { run: () => Promise.reject("nope") } } },
+} };\n`,
+    );
+
+    expect(ward(repo, ["run", "pre-commit"])).toEqual({
+      status: 1,
+      stdout: "",
+      stderr:
+        "2 files have no license\nward: pre-commit failed: check (exit 1)\n",
+    });
+    expect(ward(repo, ["run", "pre-push", "origin", "url"]).stderr).toBe(
+      "nope\nward: pre-push failed: check (exit 1)\n",
+    );
+  });
+
+  it("stages files a function task fixed", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    repo.write(
+      "ward.config.ts",
+      `import { readFileSync, writeFileSync } from "node:fs";
+export default { hooks: { "pre-commit": { tasks: { format: {
+  run: ({ files }: { files: string[] }) => {
+    for (const f of files) writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
+  },
+  glob: "a.ts",
+} } } } };\n`,
+    );
+    repo.write("a.ts", "a\n");
+    repo.git("add", ".");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("show", ":a.ts")).toBe("A");
+  });
+
   it("passes all tracked files with {all_files}", () => {
     using repo = createTempRepo();
     repo.commit("init", { "a.ts": "a\n", "b.md": "b\n" });

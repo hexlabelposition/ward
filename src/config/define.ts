@@ -2,13 +2,34 @@ import type { HookName } from "../hooks/list.ts";
 
 export type { HookName };
 
+/** What a function task gets. */
+export type TaskContext = {
+  /**
+   * Files of the hook that match the task's `glob` / `exclude`, relative to
+   * the repo root (the working directory while the function runs): staged
+   * files in `pre-commit`, pushed files in `pre-push`, none in other hooks.
+   */
+  files: string[];
+  /** Arguments git passed to the hook: `args[0]` is `{1}`. */
+  args: string[];
+};
+
+/**
+ * A task run in Ward's own process. It fails when it throws or the promise
+ * it returns rejects; the returned value is ignored otherwise.
+ */
+export type TaskFunction = (context: TaskContext) => unknown;
+
 /**
  * A named task. Further task options are added together with the features
  * behind them.
  */
 export type TaskConfig = {
-  /** Shell command, run from the repo root. `{1}`, `{2}` … are git hook args. */
-  run: string;
+  /**
+   * Shell command, run from the repo root. `{1}`, `{2}` … are git hook args.
+   * In `ward.config.ts` it can also be a function that gets the files.
+   */
+  run: string | TaskFunction;
   /**
    * Files the task runs on: one pattern or a list, any of them may match.
    * A pattern without `/` matches the file name in any directory (`"*.ts"`),

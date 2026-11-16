@@ -15,7 +15,7 @@ import {
   type FileSource,
   fileSources,
 } from "./command.ts";
-import { execCommand } from "./exec.ts";
+import { execCommand, execFunction } from "./exec.ts";
 import { changedFiles, type Snapshot, snapshotFiles } from "./fixed.ts";
 import { matchFiles } from "./match.ts";
 
@@ -42,6 +42,11 @@ export type RunHookOptions = {
  * skipped, so `eslint {staged_files}` never runs on the whole project. A task
  * with `glob` / `exclude` and no placeholder is matched against the hook's
  * files (`DEFAULT_FILE_SOURCE`) and skipped when none match.
+ *
+ * A function task (`run: fn`) is called in-process with the hook's files that
+ * match its `glob` / `exclude` and the hook's arguments. Like a command
+ * without placeholders, it is skipped only when it has `glob` / `exclude`
+ * and no file matches.
  *
  * Staged files a task changes (a formatter's fixes) are `git add`ed right
  * after it passes, unless it sets `stageFixed: false`; a task that fails
@@ -84,18 +89,30 @@ export async function runHook({
       files[source] = matchFiles(paths, task);
     }
     const lists = Object.values(files);
-    if (lists.length > 0 && lists.every((list) => list.length === 0)) continue;
+    const always = typeof task.run === "function" && !isFiltered(task);
+    if (!always && lists.length > 0 && lists.every((list) => !list.length)) {
+      continue;
+    }
 
     const before: Snapshot | undefined =
       task.stageFixed !== false && files.staged !== undefined
         ? snapshotFiles(root, files.staged)
         : undefined;
 
-    // Long file lists run as several commands, one after another.
     let code = 0;
-    for (const command of expandCommandChunks(task.run, { args, files })) {
-      code = await execCommand(command, { cwd: root, env, input });
-      if (code !== 0) break;
+    if (typeof task.run === "function") {
+      const [list = []] = lists;
+      code = await execFunction(
+        task.run,
+        { files: [...list], args: [...args] },
+        root,
+      );
+    } else {
+      // Long file lists run as several commands, one after another.
+      for (const command of expandCommandChunks(task.run, { args, files })) {
+        code = await execCommand(command, { cwd: root, env, input });
+        if (code !== 0) break;
+      }
     }
     if (code !== 0) {
       console.error(
@@ -113,14 +130,20 @@ export async function runHook({
 
 /**
  * Sources a task's files come from: its placeholders, else the hook's files
- * when it has `glob` / `exclude`. None means it always runs.
+ * when it has `glob` / `exclude` or is a function. None means it always runs.
  */
 function taskSources(task: Task, hook: HookName): FileSource[] {
-  const sources = [...fileSources(task.run)];
-  if (sources.length > 0) return sources;
+  if (typeof task.run === "string") {
+    const sources = [...fileSources(task.run)];
+    if (sources.length > 0) return sources;
+  }
   const fallback = DEFAULT_FILE_SOURCE[hook];
-  const filtered = task.glob !== undefined || task.exclude !== undefined;
-  return filtered && fallback !== undefined ? [fallback] : [];
+  const wanted = typeof task.run === "function" || isFiltered(task);
+  return wanted && fallback !== undefined ? [fallback] : [];
+}
+
+function isFiltered(task: Task): boolean {
+  return task.glob !== undefined || task.exclude !== undefined;
 }
 
 function listFiles(

@@ -181,13 +181,39 @@ describe("validateConfig", () => {
     ]);
   });
 
-  it("rejects function tasks for now", () => {
+  it("accepts function tasks", () => {
     expect(
       issues({
-        hooks: { "pre-commit": { tasks: { check: { run: () => 0 } } } },
+        hooks: {
+          "pre-commit": {
+            tasks: { check: { run: () => 0, glob: "*.ts", stageFixed: false } },
+          },
+          "commit-msg": { tasks: { check: { run: async () => {} } } },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects `glob` on a function task in a hook without files", () => {
+    expect(
+      issues({
+        hooks: {
+          "commit-msg": { tasks: { check: { run: () => 0, exclude: "*.md" } } },
+        },
       }),
     ).toEqual([
-      "hooks.pre-commit.tasks.check.run: function tasks are not supported yet",
+      "hooks.commit-msg.tasks.check: `glob` and `exclude` on a function task only work in `pre-commit` and `pre-push`",
+    ]);
+  });
+
+  it("asks for a named task for a function in the short forms", () => {
+    expect(
+      issues({
+        hooks: { "pre-commit": () => 0, "pre-push": ["npm test", () => 0] },
+      }),
+    ).toEqual([
+      "hooks.pre-commit: expected a command, a list of commands or `{ tasks }`, got a function",
+      "hooks.pre-push[1]: a function needs a named task: `{ tasks: { name: { run: fn } } }`",
     ]);
   });
 

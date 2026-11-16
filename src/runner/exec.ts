@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
+import type { TaskContext, TaskFunction } from "../config/define.ts";
 
 export type ExecOptions = {
   cwd: string;
@@ -59,4 +60,24 @@ export function execCommand(
       resolve(code ?? 128 + (signal ? constants.signals[signal] : 0));
     });
   });
+}
+
+/**
+ * Call a function task from `cwd` and return 0, or print what it threw and
+ * return 1. Ward's working directory stays `cwd` afterwards: relative paths
+ * in `context.files` keep working in callbacks the function leaves behind.
+ */
+export async function execFunction(
+  run: TaskFunction,
+  context: TaskContext,
+  cwd: string,
+): Promise<number> {
+  try {
+    process.chdir(cwd);
+    await run(context);
+    return 0;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
 }

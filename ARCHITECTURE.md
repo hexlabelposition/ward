@@ -166,7 +166,7 @@ type Hook = {
 
 type Task = {
   name: string;
-  run: string | ((ctx: { files: string[] }) => unknown);
+  run: string | ((ctx: { files: string[]; args: string[] }) => unknown);
   glob?: string[];
   exclude?: string[];
   root?: string;
@@ -248,7 +248,7 @@ If `core.hooksPath` is set, git ignores `.git/hooks` → print a clear warning a
 ### Task execution
 
 - Commands run through the system shell, cwd = repo root or the task's `root`.
-- Function tasks are called in-process with the matched file list.
+- Function tasks are called in-process with `{ files, args }`: the hook's files (staged in `pre-commit`, pushed in `pre-push`, none elsewhere) that match `glob` / `exclude`, relative to the repo root, and the hook's arguments. Ward changes its working directory to the repo root first. A thrown error or rejected promise fails the task (exit 1, message printed); the return value is ignored. Like a command without placeholders, a function task is skipped only when it has `glob` / `exclude` and nothing matches. The list is never chunked. Functions go in named tasks only, not in the string or array forms.
 - Placeholder expansion with chunking to stay under OS limits: 8000 characters on Windows (`cmd.exe` takes 8191), 100 000 bytes elsewhere (Linux caps one argument, the `sh -c` command, at 128 KiB). A longer command runs several times in a row, each with the next files of its longest list, and stops at the first failure.
 - File paths are passed relative to the working directory, properly quoted.
 - With `parallel: true`, tasks run concurrently, respecting `dependsOn`.
