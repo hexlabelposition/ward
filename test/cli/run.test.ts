@@ -29,6 +29,14 @@ function node(script: string): string {
 /** Prints the arguments it gets, joined by `|`. */
 const PRINT_ARGS = "console.log(process.argv.slice(1).join('|'))";
 
+/** Upper-cases the files it gets, then exits with `process.exitCode`. */
+function format(exitCode = 0): string {
+  return node(
+    "const fs = require('fs'); for (const f of process.argv.slice(1)) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').toUpperCase()); process.exitCode = " +
+      String(exitCode),
+  );
+}
+
 /** Write a `pre-commit` hook to the `package.json` section. */
 function writeHook(repo: TempRepo, hook: unknown) {
   repo.write(
@@ -392,6 +400,69 @@ describe("ward run", () => {
       .map((run) => run.trimEnd().split("\n"));
     expect(runs.length).toBeGreaterThan(1);
     expect(runs.flat()).toEqual(names);
+  });
+
+  it("stages the files a task fixed, not other changes", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "", "b.ts": "B\n", "c.ts": "", "d.ts": "" });
+    writeHook(repo, {
+      tasks: { format: { run: `${format()} {staged_files}`, glob: "*.ts" } },
+    });
+    repo.git("add", "package.json");
+    repo.write("a.ts", "a\n");
+    repo.write("b.ts", "B2\n");
+    repo.git("add", "a.ts", "b.ts");
+    // Not staged: the task does not get it.
+    repo.write("c.ts", "c\n");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("show", ":a.ts")).toBe("A");
+    expect(repo.git("diff", "--cached", "--name-only")).toBe(
+      "a.ts\nb.ts\npackage.json",
+    );
+    expect(repo.git("diff", "--name-only")).toBe("c.ts");
+  });
+
+  it("stages fixes of files from {all_files} only when they are staged", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n", "b.ts": "b\n" });
+    writeHook(repo, [`${format()} {all_files}`]);
+    repo.write("a.ts", "a2\n");
+    repo.git("add", "package.json", "a.ts");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("diff", "--name-only")).toBe("a.ts\nb.ts\npackage.json");
+    expect(repo.git("show", ":a.ts")).toBe("a2");
+  });
+
+  it("leaves fixes unstaged with `stageFixed: false`", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    writeHook(repo, {
+      tasks: {
+        format: { run: `${format()} {staged_files}`, stageFixed: false },
+      },
+    });
+    repo.write("a.ts", "a\n");
+    repo.git("add", "package.json", "a.ts");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("show", ":a.ts")).toBe("a");
+    expect(repo.git("diff", "--name-only")).toBe("a.ts\npackage.json");
+  });
+
+  it("leaves the changes of a failed task unstaged", () => {
+    using repo = createTempRepo();
+    repo.commit("init");
+    writeHook(repo, {
+      tasks: { format: { run: `${format(2)} {staged_files}`, glob: "*.ts" } },
+    });
+    repo.write("a.ts", "a\n");
+    repo.git("add", "package.json", "a.ts");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(2);
+    expect(repo.git("show", ":a.ts")).toBe("a");
+    expect(repo.git("diff", "--name-only")).toBe("a.ts");
   });
 
   it("passes all tracked files with {all_files}", () => {

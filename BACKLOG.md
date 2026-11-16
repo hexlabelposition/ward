@@ -71,7 +71,7 @@ Done when: this repo runs its own Prettier and ESLint through Ward on staged fil
 - [x] **W32** Skip task when no files match
 - [x] **W66** Ignore symlinks by default, `symlinks: true` to include
 - [x] **W31** Argument chunking for long file lists (Windows limit)
-- [ ] **W30** `git add` files fixed by tasks; `stageFixed: false` opts out per task
+- [x] **W30** `git add` files fixed by tasks; `stageFixed: false` opts out per task
 - [ ] **W67** Function tasks: JS/TS function gets the file list (TS config only)
 - [ ] **W33** `parallel: true` for tasks
 - [ ] **W34** Prefixed, readable output in parallel mode

@@ -208,6 +208,12 @@ A task's `glob` / `exclude` pick its files from the source (`runner/match.ts`, p
 
 Symlinks are dropped unless the task sets `symlinks: true`: a formatter would rewrite the file the link points to. A symlink is a file git stores with mode `120000` (staged, pushed or index mode, not `lstat`), so it works for files not on disk and on Windows without symlink support. Submodules (mode `160000`) are never passed to tasks.
 
+### Fixed files (`stageFixed`)
+
+Staged files a task changes (formatter fixes) are `git add`ed right after the task passes (`runner/fixed.ts`, `git/add.ts`), unless the task sets `stageFixed: false`. Ward hashes the task's staged files (after `glob` / `exclude`) before it runs and compares after, so only files the task touched are added: unstaged files and files from `{all_files}` / `{push_files}` that are not staged stay as they are. A file the task deletes is staged as deleted. A failed task leaves its changes unstaged. Paths go to `git --literal-pathspecs add` in chunks (git ≥ 2.20 has no `--pathspec-from-file`).
+
+Until partial staging lands, a fixed file that also had unstaged changes is added whole, unstaged changes included. A file changed by a `stageFixed: false` task and then fixed by another task is added with both changes.
+
 ### Partial staging and backup (the hard part)
 
 Problem: a file is partially staged; a formatter rewrites the whole file and you'd commit unstaged work or lose it.

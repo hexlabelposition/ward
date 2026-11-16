@@ -18,6 +18,8 @@ export type Task = {
   readonly exclude?: readonly string[];
   /** Include symlinks in the task's files; left out when absent. */
   readonly symlinks?: boolean;
+  /** `false`: leave files the task changed unstaged; staged when absent. */
+  readonly stageFixed?: boolean;
 };
 
 export type Hook = {
@@ -36,13 +38,13 @@ export type ResolvedConfig = {
 const PLANNED = {
   config: ["extends"],
   hook: ["parallel", "backup", "revert"],
-  task: ["root", "tags", "stageFixed", "cache", "dependsOn"],
+  task: ["root", "tags", "cache", "dependsOn"],
 } as const;
 
 const KNOWN = {
   config: ["hooks"],
   hook: ["tasks"],
-  task: ["run", "glob", "exclude", "symlinks"],
+  task: ["run", "glob", "exclude", "symlinks", "stageFixed"],
 } as const;
 
 /**
@@ -167,11 +169,13 @@ function checkTask(
       checkPatterns(task[key], join(path, key), report);
     }
   }
-  if (Object.hasOwn(task, "symlinks") && typeof task.symlinks !== "boolean") {
-    report(
-      join(path, "symlinks"),
-      `expected true or false, got ${describe(task.symlinks)}`,
-    );
+  for (const key of ["symlinks", "stageFixed"] as const) {
+    if (Object.hasOwn(task, key) && typeof task[key] !== "boolean") {
+      report(
+        join(path, key),
+        `expected true or false, got ${describe(task[key])}`,
+      );
+    }
   }
   if (!Object.hasOwn(task, "run")) {
     report(path, "missing `run`");
@@ -329,6 +333,7 @@ function normalizeTasks(value: HookConfig): Task[] {
     ...(task.glob !== undefined && { glob: toList(task.glob) }),
     ...(task.exclude !== undefined && { exclude: toList(task.exclude) }),
     ...(task.symlinks === true && { symlinks: true }),
+    ...(task.stageFixed === false && { stageFixed: false }),
   }));
 }
 

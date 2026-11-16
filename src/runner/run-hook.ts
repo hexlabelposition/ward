@@ -6,6 +6,7 @@ import {
   type GitFile,
   parsePushInput,
 } from "../git/files.ts";
+import { addFiles } from "../git/add.ts";
 import type { GitOptions } from "../git/exec.ts";
 import type { HookName } from "../hooks/list.ts";
 import {
@@ -15,6 +16,7 @@ import {
   fileSources,
 } from "./command.ts";
 import { execCommand } from "./exec.ts";
+import { changedFiles, type Snapshot, snapshotFiles } from "./fixed.ts";
 import { matchFiles } from "./match.ts";
 
 export type RunHookOptions = {
@@ -40,6 +42,11 @@ export type RunHookOptions = {
  * skipped, so `eslint {staged_files}` never runs on the whole project. A task
  * with `glob` / `exclude` and no placeholder is matched against the hook's
  * files (`DEFAULT_FILE_SOURCE`) and skipped when none match.
+ *
+ * Staged files a task changes (a formatter's fixes) are `git add`ed right
+ * after it passes, unless it sets `stageFixed: false`; a task that fails
+ * leaves its changes unstaged. Only the task's own staged files are
+ * compared, so files with unstaged changes it did not touch stay as they are.
  *
  * Each source is read from git once per run, when a task first needs it.
  * Push files come from the `pre-push` refs on stdin, so every task then gets
@@ -79,6 +86,11 @@ export async function runHook({
     const lists = Object.values(files);
     if (lists.length > 0 && lists.every((list) => list.length === 0)) continue;
 
+    const before: Snapshot | undefined =
+      task.stageFixed !== false && files.staged !== undefined
+        ? snapshotFiles(root, files.staged)
+        : undefined;
+
     // Long file lists run as several commands, one after another.
     let code = 0;
     for (const command of expandCommandChunks(task.run, { args, files })) {
@@ -90,6 +102,10 @@ export async function runHook({
         `ward: ${hook} failed: ${task.name} (exit ${String(code)})`,
       );
       return code;
+    }
+    if (before !== undefined) {
+      const fixed = changedFiles(root, before);
+      if (fixed.length > 0) addFiles(fixed, git);
     }
   }
   return 0;

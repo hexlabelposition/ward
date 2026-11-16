@@ -3,8 +3,8 @@ import type { HookName } from "../hooks/list.ts";
 export type { HookName };
 
 /**
- * A named task. `stageFixed` and the other task options are added together
- * with the features behind them (0.2 and later).
+ * A named task. Further task options are added together with the features
+ * behind them.
  */
 export type TaskConfig = {
   /** Shell command, run from the repo root. `{1}`, `{2}` … are git hook args. */
@@ -22,6 +22,11 @@ export type TaskConfig = {
    * the file the link points to.
    */
   symlinks?: boolean;
+  /**
+   * `git add` the staged files the task changed, so a formatter's fixes go
+   * into the commit. On by default; `false` leaves them unstaged.
+   */
+  stageFixed?: boolean;
 };
 
 /**
