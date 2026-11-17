@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -883,6 +884,117 @@ describe("ward run backup", () => {
   });
 });
 
+describe("ward run partial staging", () => {
+  const LINES = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
+
+  /** Replaces `bad` with `good` in the files it gets. */
+  const FIX_BAD = node(
+    "const fs = require('fs'); for (const f of process.argv.slice(1)) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('bad', 'good'))",
+  );
+
+  /** Prints the content of the files it gets. */
+  const CAT = node(
+    "for (const f of process.argv.slice(1)) process.stdout.write(require('fs').readFileSync(f, 'utf8'))",
+  );
+
+  /** `a.txt` with `bad` staged on the first line and `J` unstaged on the last. */
+  function partiallyStaged(repo: TempRepo, hook: unknown) {
+    repo.commit("init", { "a.txt": LINES });
+    writeHook(repo, hook);
+    repo.git("add", "package.json");
+    repo.write("a.txt", LINES.replace("a", "bad"));
+    repo.git("add", "a.txt");
+    repo.write("a.txt", LINES.replace("a", "bad").replace("j", "J"));
+  }
+
+  function read(repo: TempRepo, path: string) {
+    return readFileSync(join(repo.dir, path), "utf8");
+  }
+
+  it("runs tasks on the staged version and keeps unstaged changes", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, {
+      tasks: {
+        cat: { run: `${CAT} {staged_files}`, glob: "*.txt" },
+        fix: { run: `${FIX_BAD} {staged_files}`, glob: "*.txt" },
+      },
+    });
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe(LINES.replace("a", "bad"));
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "good").trim());
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "good").replace("j", "J"),
+    );
+    expect(existsSync(join(repo.dir, ".git/ward/unstaged.patch"))).toBe(false);
+  });
+
+  it("puts unstaged changes back when a task fails", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, {
+      tasks: {
+        cat: { run: `${CAT} {staged_files}`, glob: "*.txt" },
+        fail: { run: "exit 3" },
+      },
+    });
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(3);
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "bad").replace("j", "J"),
+    );
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "bad").trim());
+  });
+
+  it("fails and leaves conflict markers when a fix overlaps unstaged changes", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, [`${format()} {staged_files}`]);
+
+    const { status, stderr } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "ward: unstaged changes conflict with task fixes in a.txt: resolve the conflict markers",
+    );
+    expect(read(repo, "a.txt")).toContain("<<<<<<<");
+    expect(repo.git("show", ":a.txt")).toBe(
+      LINES.replace("a", "bad").toUpperCase().trim(),
+    );
+    expect(existsSync(join(repo.dir, ".git/ward/unstaged.patch"))).toBe(true);
+  });
+
+  it("does not hide changes from tasks that get no staged files", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, [`${CAT} a.txt`]);
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe(LINES.replace("a", "bad").replace("j", "J"));
+  });
+
+  it("hides changes from function tasks too", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "ward.config.ts",
+      `import { readFileSync } from "node:fs";\nexport default { hooks: { "pre-commit": { tasks: { cat: { glob: "*.txt", run: ({ files }) => { for (const f of files) process.stdout.write(readFileSync(f, "utf8")); } } } } } };\n`,
+    );
+    repo.commit("init", { "a.txt": LINES });
+    repo.write("a.txt", LINES.replace("a", "bad"));
+    repo.git("add", "a.txt");
+    repo.write("a.txt", LINES.replace("a", "bad").replace("j", "J"));
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe(LINES.replace("a", "bad"));
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "bad").replace("j", "J"),
+    );
+  });
+});
+
 describe("parseRunArgs", () => {
   it("reads Ward's flags right after the hook name", () => {
     expect(parseRunArgs(["pre-commit", "--no-backup", "a", "b"])).toEqual({
@@ -1023,6 +1135,38 @@ describe("ward run from git", () => {
     expect(result.stderr).toContain("ward backup");
     expect(repo.git("stash", "list")).toBe("");
     expect(repo.git("show", "HEAD:a.txt")).toBe("a2");
+  });
+
+  posixOnly("commits fixed staged changes and keeps unstaged ones", () => {
+    using repo = createTempRepo();
+    const lines = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
+    repo.commit("init", { "a.txt": lines });
+    repo.write(
+      "ward.yml",
+      `hooks:\n  pre-commit: ${JSON.stringify(`${node("const fs = require('fs'); for (const f of process.argv.slice(1)) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('bad', 'good'))")} {staged_files}`)}\n`,
+    );
+    installStubs(repo);
+    repo.git("add", "ward.yml");
+    repo.write("a.txt", lines.replace("a", "bad"));
+    repo.git("add", "a.txt");
+    repo.write("a.txt", lines.replace("a", "bad").replace("j", "J"));
+
+    const result = spawnSync("git", ["commit", "-m", "next"], {
+      cwd: repo.dir,
+      env: repo.env,
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(repo.git("show", "HEAD:a.txt")).toBe(
+      lines.replace("a", "good").trim(),
+    );
+    expect(readFileSync(join(repo.dir, "a.txt"), "utf8")).toBe(
+      lines.replace("a", "good").replace("j", "J"),
+    );
+    expect(repo.git("status", "--porcelain", "--untracked-files=no")).toBe(
+      "M a.txt",
+    );
   });
 
   posixOnly("blocks the commit on an invalid config", () => {
