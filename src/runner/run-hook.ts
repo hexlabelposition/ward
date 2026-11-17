@@ -7,7 +7,14 @@ import {
   parsePushInput,
 } from "../git/files.ts";
 import { addFiles } from "../git/add.ts";
-import { createBackup, dropBackup } from "../git/backup.ts";
+import {
+  createBackup,
+  dropBackup,
+  type HiddenChanges,
+  hideUnstagedChanges,
+  RestoreError,
+  restoreUnstagedChanges,
+} from "../git/backup.ts";
 import type { GitOptions } from "../git/exec.ts";
 import type { HookName } from "../hooks/list.ts";
 import {
@@ -63,6 +70,12 @@ export type RunHookOptions = {
  * after it passes, unless it sets `stageFixed: false`; a task that fails
  * leaves its changes unstaged. Only the task's own staged files are
  * compared, so files with unstaged changes it did not touch stay as they are.
+ *
+ * When a task gets staged files, the unstaged changes of partially staged
+ * files are hidden while the tasks run: they see, fix and stage only what is
+ * committed. The changes are put back afterwards, whether the tasks passed
+ * or not; if they conflict with a task's fixes, the files are left with
+ * conflict markers and the hook fails.
  *
  * Each source is read from git once per run, when a task first needs it.
  * Push files come from the `pre-push` refs on stdin, so every task then gets
@@ -185,11 +198,30 @@ export async function runHook({
     return 0;
   };
 
+  /** `runTasks` with the unstaged changes hidden when tasks get staged files. */
+  const runHidden = async (): Promise<number> => {
+    const hidden = sources.has("staged")
+      ? hideUnstagedChanges(
+          filesOf("staged").map((file) => file.path),
+          git,
+        )
+      : null;
+    if (hidden === null) return runTasks();
+    let code: number;
+    try {
+      code = await runTasks();
+    } catch (error) {
+      restore(hidden, git);
+      throw error;
+    }
+    return restore(hidden, git) || code !== 0 ? code : 1;
+  };
+
   const hash = backup ? createBackup(git) : null;
-  if (hash === null) return runTasks();
+  if (hash === null) return runHidden();
   let passed = false;
   try {
-    const code = await runTasks();
+    const code = await runHidden();
     passed = code === 0;
     return code;
   } finally {
@@ -200,6 +232,33 @@ export async function runHook({
         `ward: the index and working tree before the run are kept as "ward backup" in \`git stash list\` (${hash})`,
       );
     }
+  }
+}
+
+/**
+ * Put hidden unstaged changes back; `false` (reported) when they could not
+ * be restored cleanly.
+ */
+function restore(hidden: HiddenChanges, git: GitOptions): boolean {
+  try {
+    restoreUnstagedChanges(hidden, git);
+    return true;
+  } catch (error) {
+    if (!(error instanceof RestoreError)) throw error;
+    reportRestoreError(error);
+    return false;
+  }
+}
+
+function reportRestoreError(error: RestoreError): void {
+  if (error.conflicts.length > 0) {
+    console.error(
+      `ward: unstaged changes conflict with task fixes in ${error.conflicts.join(", ")}: resolve the conflict markers. The changes are also kept in ${error.patch}`,
+    );
+  } else {
+    console.error(
+      `ward: could not restore unstaged changes: ${error.message}\nThey are kept in ${error.patch}`,
+    );
   }
 }
 

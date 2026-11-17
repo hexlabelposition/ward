@@ -214,7 +214,7 @@ Symlinks are dropped unless the task sets `symlinks: true`: a formatter would re
 
 Staged files a task changes (formatter fixes) are `git add`ed right after the task passes (`runner/fixed.ts`, `git/add.ts`), unless the task sets `stageFixed: false`. Ward hashes the task's staged files (after `glob` / `exclude`) before it runs and compares after, so only files the task touched are added: unstaged files and files from `{all_files}` / `{push_files}` that are not staged stay as they are. A file the task deletes is staged as deleted. A failed task leaves its changes unstaged. Paths go to `git --literal-pathspecs add` in chunks (git ≥ 2.20 has no `--pathspec-from-file`).
 
-Until partial staging lands, a fixed file that also had unstaged changes is added whole, unstaged changes included. A file changed by a `stageFixed: false` task and then fixed by another task is added with both changes.
+A file that also had unstaged changes is added without them: they are hidden while the tasks run (see "Partial staging and backup"). A file changed by a `stageFixed: false` task and then fixed by another task is added with both changes.
 
 ### Partial staging and backup (the hard part)
 
@@ -231,6 +231,12 @@ Approach (same idea as lint-staged):
 7. On task failure → restore from backup hash and report. `--no-revert` / `revert: false` keeps task changes for inspection. Without a backup a full revert is not possible; only the unstaged patch is restored.
 
 The backup (`git/backup.ts`) is taken before the first task of every hook that has tasks. The stash commit is also stored in `git stash list` as "ward backup", so it survives a killed run and can be restored by hand; it is dropped when every task passes and kept, with its hash printed, when the hook fails. It is found by hash, not by position, since a task may push or pop stash entries. No changes or no commit yet (`git stash create` has nothing to base on) → no backup. Untracked files are not part of it. Inside `git commit -a` / `git commit <paths>` it records the index git passes in `GIT_INDEX_FILE`, the one being committed.
+
+Partial staging (steps 2, 3, 6; `git/backup.ts`) runs only when a task gets staged files: `{staged_files}`, or a function task or `glob` / `exclude` without placeholders in `pre-commit`. A plain `npm test` sees the working tree as is. A partially staged file is a staged file (`ACMR`) with unstaged changes that are not a deletion (deletions: W38). The patch is written with fixed `a/` `b/` prefixes and no external diff or textconv, so user diff settings can't break it, and kept in `.git/ward/unstaged.patch` until it is applied, so a killed run leaves it recoverable. The unstaged changes are restored whether the tasks passed or not:
+
+- A plain `git apply` first: it works when the tasks didn't touch the lines around the unstaged changes.
+- Otherwise `git apply --3way`. It applies to the index too, so it runs against a copy of the index (`GIT_INDEX_FILE`) where the files are added as the tasks left them; the real index keeps exactly what the tasks staged.
+- Changes that overlap a fix (or are on the next line, as in any git merge) leave conflict markers in the file. The hook fails, the message names the files, and the patch is kept. The index holds the fixed staged version.
 
 `--no-backup` is read only right after the hook name (`ward run pre-commit --no-backup`): the stubs pass git's hook arguments unparsed, so anything after the first other argument, or after `--`, goes to the hook.
 
