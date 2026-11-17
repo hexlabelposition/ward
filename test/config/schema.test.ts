@@ -75,14 +75,12 @@ describe("validateConfig", () => {
         extends: ["ward:ts"],
         hooks: {
           "pre-commit": {
-            revert: false,
             tasks: { lint: { run: "eslint", cache: true } },
           },
         },
       }),
     ).toEqual([
       "extends: not supported yet",
-      "hooks.pre-commit.revert: not supported yet",
       "hooks.pre-commit.tasks.lint.cache: not supported yet",
     ]);
   });
@@ -181,17 +179,23 @@ describe("validateConfig", () => {
     ]);
   });
 
-  it("accepts `parallel` and `backup` as booleans only", () => {
+  it("accepts `parallel`, `backup` and `revert` as booleans only", () => {
     expect(
       issues({
         hooks: {
-          "pre-commit": { parallel: true, backup: false, tasks: {} },
-          "pre-push": { parallel: "yes", backup: 0, tasks: {} },
+          "pre-commit": {
+            parallel: true,
+            backup: false,
+            revert: false,
+            tasks: {},
+          },
+          "pre-push": { parallel: "yes", backup: 0, revert: [], tasks: {} },
         },
       }),
     ).toEqual([
       "hooks.pre-push.parallel: expected true or false, got a string",
       "hooks.pre-push.backup: expected true or false, got a number",
+      "hooks.pre-push.revert: expected true or false, got a list",
     ]);
   });
 
@@ -380,17 +384,25 @@ describe("normalizeConfig", () => {
     });
   });
 
-  it("keeps `backup: false` only", () => {
+  it("keeps `backup: false` and `revert: false` only", () => {
     expect(
       normalizeConfig({
         hooks: {
-          "pre-commit": { backup: false, tasks: { a: { run: "a" } } },
-          "pre-push": { backup: true, tasks: {} },
+          "pre-commit": {
+            backup: false,
+            revert: false,
+            tasks: { a: { run: "a" } },
+          },
+          "pre-push": { backup: true, revert: true, tasks: {} },
         },
       }),
     ).toEqual({
       hooks: {
-        "pre-commit": { tasks: [{ name: "a", run: "a" }], backup: false },
+        "pre-commit": {
+          tasks: [{ name: "a", run: "a" }],
+          backup: false,
+          revert: false,
+        },
         "pre-push": { tasks: [] },
       },
     });
