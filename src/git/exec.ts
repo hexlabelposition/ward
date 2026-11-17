@@ -27,14 +27,27 @@ export class GitError extends Error {
  * Throws `GitError` on a non-zero exit; spawn errors (git not installed) are rethrown as is.
  */
 export function git(args: readonly string[], options: GitOptions = {}): string {
+  return gitBuffer(args, options)
+    .toString("utf8")
+    .replace(/\r?\n$/, "");
+}
+
+/**
+ * Like `git`, but stdout as is, in bytes: for output that is not text in
+ * one encoding, such as a patch of files with any content.
+ */
+export function gitBuffer(
+  args: readonly string[],
+  options: GitOptions = {},
+): Buffer {
   try {
-    const stdout = execFileSync("git", args, {
+    return execFileSync("git", args, {
       cwd: options.cwd,
       env: options.env,
-      encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      // The default 1 MB is too little for a file list or a patch of a large repo.
+      maxBuffer: 1024 ** 3,
     });
-    return stdout.replace(/\r?\n$/, "");
   } catch (error) {
     if (isExitError(error)) {
       throw new GitError(args, error.status, String(error.stderr).trim());
