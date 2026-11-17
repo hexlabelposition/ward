@@ -11,7 +11,34 @@ export type RunOptions = {
   args?: string[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** `false` (`--no-backup`): skip the backup even if the config wants it. */
+  backup?: boolean;
 };
+
+/** Flags of `ward run` itself, given right after the hook name. */
+const RUN_FLAGS = ["--no-backup"] as const;
+
+/**
+ * Split `ward run` arguments into the hook, Ward's own flags and the hook
+ * args git passed. Flags are only read right after the hook name and only
+ * known ones: everything from the first other argument (or after `--`) goes
+ * to the hook as is, since the stubs pass git's args unparsed.
+ */
+export function parseRunArgs(argv: readonly string[]): RunOptions {
+  const [hook, ...rest] = argv;
+  let backup = true;
+  let i = 0;
+  for (; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === "--") {
+      i++;
+      break;
+    }
+    if (!(RUN_FLAGS as readonly (string | undefined)[]).includes(arg)) break;
+    if (arg === "--no-backup") backup = false;
+  }
+  return { hook, args: rest.slice(i), ...(!backup && { backup }) };
+}
 
 /**
  * `ward run <hook> [args]`, called by the stubs. Returns the exit code.
@@ -20,12 +47,15 @@ export type RunOptions = {
  * output: every hook has a stub, so this is the common case. Otherwise the
  * tasks run in order and the first failure is the exit code.
  * `WARD=0` skips the hook, and so does a merge or rebase in progress.
+ * The index and working tree are backed up before the tasks unless the hook
+ * sets `backup: false` or `--no-backup` is given.
  */
 export async function run({
   hook,
   args = [],
   cwd = process.cwd(),
   env = process.env,
+  backup = true,
 }: RunOptions): Promise<number> {
   if (hook === undefined) {
     console.error("ward run: missing hook name, e.g. `ward run pre-commit`");
@@ -60,8 +90,17 @@ export async function run({
   const tasks = config?.hooks[hook]?.tasks ?? [];
   if (tasks.length === 0) return 0;
   const parallel = config?.hooks[hook]?.parallel === true;
+  const withBackup = backup && config?.hooks[hook]?.backup !== false;
 
   // Imported only when there is something to run: keeps the no-op path fast.
   const { runHook } = await import("../runner/run-hook.ts");
-  return runHook({ hook, tasks, args, root: paths.root, env, parallel });
+  return runHook({
+    hook,
+    tasks,
+    args,
+    root: paths.root,
+    env,
+    parallel,
+    backup: withBackup,
+  });
 }
