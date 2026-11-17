@@ -1,4 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -8,6 +15,7 @@ import {
   hideUnstagedChanges,
   RestoreError,
   restoreUnstagedChanges,
+  revertToBackup,
 } from "../../src/git/backup.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 
@@ -242,5 +250,51 @@ describe("restoreUnstagedChanges", () => {
       LINES.replace("a", "A").replace("j", "j;").trim(),
     );
     expect(existsSync(`${hidden.patch}.index`)).toBe(false);
+  });
+});
+
+describe("revertToBackup", () => {
+  it("puts the index and the working tree back as they were", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n", "b.txt": "b\n", "c.txt": "c\n" });
+    repo.write("a.txt", "a staged\n");
+    repo.git("add", "a.txt");
+    repo.write("a.txt", "a unstaged\n");
+    repo.write("b.txt", "b unstaged\n");
+    const git = { cwd: repo.dir, env: repo.env };
+    const status = repo.git("status", "--porcelain");
+    const hash = String(createBackup(git));
+    // What tasks might do: fix and stage, delete, add a new file.
+    repo.write("a.txt", "A FIXED\n");
+    rmSync(join(repo.dir, "c.txt"));
+    repo.write("new.txt", "new\n");
+    repo.git("add", "--all");
+
+    revertToBackup(hash, git);
+
+    expect(read(repo, "a.txt")).toBe("a unstaged\n");
+    expect(repo.git("show", ":a.txt")).toBe("a staged");
+    expect(read(repo, "b.txt")).toBe("b unstaged\n");
+    expect(read(repo, "c.txt")).toBe("c\n");
+    // Out of the index, still on disk.
+    expect(read(repo, "new.txt")).toBe("new\n");
+    expect(repo.git("status", "--porcelain")).toBe(`${status}\n?? new.txt`);
+  });
+
+  it("leaves files the tasks did not touch as they are", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n", "b.txt": "b\n" });
+    repo.write("a.txt", "a2\n");
+    repo.write("b.txt", "b2\n");
+    const git = { cwd: repo.dir, env: repo.env };
+    const hash = String(createBackup(git));
+    const old = new Date(2000, 0, 1);
+    utimesSync(join(repo.dir, "b.txt"), old, old);
+    repo.write("a.txt", "A2\n");
+
+    revertToBackup(hash, git);
+
+    expect(read(repo, "a.txt")).toBe("a2\n");
+    expect(statSync(join(repo.dir, "b.txt")).mtime).toEqual(old);
   });
 });
