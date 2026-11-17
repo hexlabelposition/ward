@@ -1,4 +1,7 @@
-import { git, GitError, type GitOptions } from "./exec.ts";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { addFiles, chunkPaths, MAX_PATHS_LENGTH } from "./add.ts";
+import { git, gitBuffer, GitError, type GitOptions } from "./exec.ts";
 
 /** Message of Ward's entries in `git stash list`. */
 export const BACKUP_MESSAGE = "ward backup";
@@ -47,4 +50,137 @@ function hasHead(options: GitOptions): boolean {
     if (error instanceof GitError) return false;
     throw error;
   }
+}
+
+/** Unstaged changes taken out of partially staged files while tasks run. */
+export type HiddenChanges = {
+  /** Files whose unstaged changes were hidden, relative to the repo root. */
+  readonly files: readonly string[];
+  /** Absolute path of the patch that holds them, in the git dir. */
+  readonly patch: string;
+};
+
+/** The unstaged changes could not be put back. */
+export class RestoreError extends Error {
+  /** Files left with conflict markers; empty when nothing was applied. */
+  readonly conflicts: readonly string[];
+  /** Where the patch of the unstaged changes is kept. */
+  readonly patch: string;
+
+  constructor(message: string, conflicts: readonly string[], patch: string) {
+    super(message);
+    this.name = "RestoreError";
+    this.conflicts = conflicts;
+    this.patch = patch;
+  }
+}
+
+/** Where the patch is kept, relative to the git dir of the worktree. */
+const PATCH = "ward/unstaged.patch";
+
+/**
+ * Hide the unstaged changes of partially staged files, so tasks see and fix
+ * only what is committed. The changes are saved as a binary patch
+ * (`.git/ward/unstaged.patch`) before the files are reset to their index
+ * version, so a killed run leaves them recoverable. `null` when no staged
+ * file has unstaged changes.
+ *
+ * Files deleted in the working tree are left as they are (W38).
+ *
+ * @param staged Staged files, relative to the repo root (`cwd`).
+ */
+export function hideUnstagedChanges(
+  staged: readonly string[],
+  options: GitOptions = {},
+): HiddenChanges | null {
+  const stagedSet = new Set(staged);
+  const files = git(
+    ["diff", "--name-only", "-z", "--diff-filter=d", "--ignore-submodules"],
+    options,
+  )
+    .split("\0")
+    .filter((path) => path !== "" && stagedSet.has(path));
+  if (files.length === 0) return null;
+
+  const patch = gitPath(PATCH, options);
+  mkdirSync(dirname(patch), { recursive: true });
+  const chunks = chunkPaths(files, MAX_PATHS_LENGTH).map((chunk) =>
+    gitBuffer(
+      [
+        "--literal-pathspecs",
+        "diff",
+        "--binary",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        // `diff.noprefix` / `diff.mnemonicPrefix` would break `git apply`.
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "--",
+        ...chunk,
+      ],
+      options,
+    ),
+  );
+  writeFileSync(patch, Buffer.concat(chunks));
+
+  for (const chunk of chunkPaths(files, MAX_PATHS_LENGTH)) {
+    git(["checkout-index", "--force", "--", ...chunk], options);
+  }
+  return { files, patch };
+}
+
+/**
+ * Put hidden unstaged changes back on top of what the tasks left, without
+ * touching the index: task fixes that were staged stay staged, the user's
+ * changes stay unstaged.
+ *
+ * A plain `git apply` works when the tasks did not touch the lines around
+ * the unstaged changes. Otherwise the patch is merged in with
+ * `git apply --3way`, against a copy of the index that matches the working
+ * tree, so the real index is left alone. The patch file is removed once the
+ * changes are back.
+ *
+ * @throws RestoreError when the changes conflict with the task's (the files
+ *   are left with conflict markers) or can't be applied at all; the patch is
+ *   kept for both.
+ */
+export function restoreUnstagedChanges(
+  hidden: HiddenChanges,
+  options: GitOptions = {},
+): void {
+  const apply = ["apply", "--whitespace=nowarn"];
+  try {
+    git([...apply, hidden.patch], options);
+    rmSync(hidden.patch, { force: true });
+    return;
+  } catch (error) {
+    if (!(error instanceof GitError)) throw error;
+  }
+
+  const index = `${gitPath(PATCH, options)}.index`;
+  try {
+    copyFileSync(gitPath("index", options), index);
+    const env = { ...(options.env ?? process.env), GIT_INDEX_FILE: index };
+    // `--3way` applies to the index too, and needs it to match the files.
+    addFiles(hidden.files, { ...options, env });
+    git([...apply, "--3way", hidden.patch], { ...options, env });
+    rmSync(hidden.patch, { force: true });
+  } catch (error) {
+    if (!(error instanceof GitError)) throw error;
+    // `U <path>` for each file left with conflict markers.
+    const conflicts = error.stderr
+      .split("\n")
+      .filter((line) => line.startsWith("U "))
+      .map((line) => line.slice(2));
+    throw new RestoreError(error.stderr, conflicts, hidden.patch);
+  } finally {
+    rmSync(index, { force: true });
+  }
+}
+
+/** Absolute path of `name` in the git dir; follows `GIT_INDEX_FILE` for `index`. */
+function gitPath(name: string, options: GitOptions): string {
+  const path = git(["rev-parse", "--git-path", name], options);
+  return resolve(options.cwd ?? process.cwd(), path);
 }

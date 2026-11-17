@@ -4,9 +4,9 @@ import { git, type GitOptions } from "./exec.ts";
  * Longest total length of paths in one `git add`. Windows caps the whole
  * command line at 32 767 characters; POSIX allows far more, but a bounded
  * chunk costs nothing. Git ≥ 2.20 has no `--pathspec-from-file`, so long
- * lists go in several calls.
+ * lists go in several calls. Used for every git command that takes paths.
  */
-const MAX_PATHS_LENGTH = 8000;
+export const MAX_PATHS_LENGTH = 8000;
 
 /**
  * `git add` the given paths, relative to the repo root (`cwd`). A path gone
