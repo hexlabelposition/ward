@@ -75,14 +75,14 @@ describe("validateConfig", () => {
         extends: ["ward:ts"],
         hooks: {
           "pre-commit": {
-            backup: false,
+            revert: false,
             tasks: { lint: { run: "eslint", cache: true } },
           },
         },
       }),
     ).toEqual([
       "extends: not supported yet",
-      "hooks.pre-commit.backup: not supported yet",
+      "hooks.pre-commit.revert: not supported yet",
       "hooks.pre-commit.tasks.lint.cache: not supported yet",
     ]);
   });
@@ -181,16 +181,17 @@ describe("validateConfig", () => {
     ]);
   });
 
-  it("accepts `parallel` as a boolean only", () => {
+  it("accepts `parallel` and `backup` as booleans only", () => {
     expect(
       issues({
         hooks: {
-          "pre-commit": { parallel: true, tasks: {} },
-          "pre-push": { parallel: "yes", tasks: {} },
+          "pre-commit": { parallel: true, backup: false, tasks: {} },
+          "pre-push": { parallel: "yes", backup: 0, tasks: {} },
         },
       }),
     ).toEqual([
       "hooks.pre-push.parallel: expected true or false, got a string",
+      "hooks.pre-push.backup: expected true or false, got a number",
     ]);
   });
 
@@ -374,6 +375,22 @@ describe("normalizeConfig", () => {
     ).toEqual({
       hooks: {
         "pre-commit": { tasks: [{ name: "a", run: "a" }], parallel: true },
+        "pre-push": { tasks: [] },
+      },
+    });
+  });
+
+  it("keeps `backup: false` only", () => {
+    expect(
+      normalizeConfig({
+        hooks: {
+          "pre-commit": { backup: false, tasks: { a: { run: "a" } } },
+          "pre-push": { backup: true, tasks: {} },
+        },
+      }),
+    ).toEqual({
+      hooks: {
+        "pre-commit": { tasks: [{ name: "a", run: "a" }], backup: false },
         "pre-push": { tasks: [] },
       },
     });

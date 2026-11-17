@@ -66,6 +66,12 @@ export type HookConfig =
        * if any of them fails. Tasks run one after another by default.
        */
       parallel?: boolean;
+      /**
+       * Save the index and working tree with `git stash create` before the
+       * run, so they can be restored if a task breaks them. On by default;
+       * `false` skips it to save time in large repos.
+       */
+      backup?: boolean;
     };
 
 /** Contents of `ward.config.ts`, `ward.yml` or the `"ward"` section of `package.json`. */

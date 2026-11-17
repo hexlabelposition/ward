@@ -28,6 +28,8 @@ export type Hook = {
   readonly tasks: readonly Task[];
   /** Run the tasks at once; one after another when absent. */
   readonly parallel?: boolean;
+  /** `false`: no `git stash create` backup before the run; on when absent. */
+  readonly backup?: boolean;
 };
 
 export type ResolvedConfig = {
@@ -40,13 +42,13 @@ export type ResolvedConfig = {
  */
 const PLANNED = {
   config: ["extends"],
-  hook: ["backup", "revert"],
+  hook: ["revert"],
   task: ["root", "tags", "cache", "dependsOn"],
 } as const;
 
 const KNOWN = {
   config: ["hooks"],
-  hook: ["tasks", "parallel"],
+  hook: ["tasks", "parallel", "backup"],
   task: ["run", "glob", "exclude", "symlinks", "stageFixed"],
 } as const;
 
@@ -134,11 +136,13 @@ function checkHook(
       report(join(path, key), unknownOption(key, "hook"));
     }
   }
-  if (Object.hasOwn(value, "parallel") && typeof value.parallel !== "boolean") {
-    report(
-      join(path, "parallel"),
-      `expected true or false, got ${describe(value.parallel)}`,
-    );
+  for (const key of ["parallel", "backup"] as const) {
+    if (Object.hasOwn(value, key) && typeof value[key] !== "boolean") {
+      report(
+        join(path, key),
+        `expected true or false, got ${describe(value[key])}`,
+      );
+    }
   }
   if (!Object.hasOwn(value, "tasks")) {
     report(path, "missing `tasks`");
@@ -342,9 +346,11 @@ export function normalizeConfig(config: Config): ResolvedConfig {
     HookConfig,
   ][]) {
     const parallel = isObjectForm(value) && value.parallel === true;
+    const noBackup = isObjectForm(value) && value.backup === false;
     hooks[name] = {
       tasks: normalizeTasks(value),
       ...(parallel && { parallel: true }),
+      ...(noBackup && { backup: false }),
     };
   }
   return { hooks };
