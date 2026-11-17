@@ -469,7 +469,7 @@ describe("ward run", () => {
     expect(repo.git("diff", "--name-only")).toBe("a.ts\npackage.json");
   });
 
-  it("leaves the changes of a failed task unstaged", () => {
+  it("leaves the changes of a failed task unstaged with --no-revert", () => {
     using repo = createTempRepo();
     repo.commit("init");
     writeHook(repo, {
@@ -478,7 +478,7 @@ describe("ward run", () => {
     repo.write("a.ts", "a\n");
     repo.git("add", "package.json", "a.ts");
 
-    expect(ward(repo, ["run", "pre-commit"]).status).toBe(2);
+    expect(ward(repo, ["run", "pre-commit", "--no-revert"]).status).toBe(2);
     expect(repo.git("show", ":a.ts")).toBe("a");
     expect(repo.git("diff", "--name-only")).toBe("a.ts");
   });
@@ -815,7 +815,7 @@ describe("ward run backup", () => {
     expect(repo.git("stash", "list")).toBe("");
   });
 
-  it("keeps the state before the run when a task fails", () => {
+  it("keeps the backup when a task fails with --no-revert", () => {
     using repo = createTempRepo();
     repo.commit("init", { "a.ts": "a\n" });
     writeHook(repo, [`${format(1)} {staged_files}`]);
@@ -824,7 +824,7 @@ describe("ward run backup", () => {
     repo.git("add", "a.ts");
     repo.write("a.ts", "a3\n");
 
-    const { status, stderr } = ward(repo, ["run", "pre-commit"]);
+    const { status, stderr } = ward(repo, ["run", "pre-commit", "--no-revert"]);
 
     expect(status).toBe(1);
     const hash = repo.git("stash", "list", "--format=%H");
@@ -931,7 +931,7 @@ describe("ward run partial staging", () => {
     expect(existsSync(join(repo.dir, ".git/ward/unstaged.patch"))).toBe(false);
   });
 
-  it("puts unstaged changes back when a task fails", () => {
+  it("puts unstaged changes back when a task fails with --no-revert", () => {
     using repo = createTempRepo();
     partiallyStaged(repo, {
       tasks: {
@@ -940,18 +940,18 @@ describe("ward run partial staging", () => {
       },
     });
 
-    expect(ward(repo, ["run", "pre-commit"]).status).toBe(3);
+    expect(ward(repo, ["run", "pre-commit", "--no-revert"]).status).toBe(3);
     expect(read(repo, "a.txt")).toBe(
       LINES.replace("a", "bad").replace("j", "J"),
     );
     expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "bad").trim());
   });
 
-  it("fails and leaves conflict markers when a fix overlaps unstaged changes", () => {
+  it("leaves conflict markers with --no-revert when a fix overlaps unstaged changes", () => {
     using repo = createTempRepo();
     partiallyStaged(repo, [`${format()} {staged_files}`]);
 
-    const { status, stderr } = ward(repo, ["run", "pre-commit"]);
+    const { status, stderr } = ward(repo, ["run", "pre-commit", "--no-revert"]);
 
     expect(status).toBe(1);
     expect(stderr).toContain(
@@ -962,6 +962,87 @@ describe("ward run partial staging", () => {
       LINES.replace("a", "bad").toUpperCase().trim(),
     );
     expect(existsSync(join(repo.dir, ".git/ward/unstaged.patch"))).toBe(true);
+  });
+
+  it("reverts a failed run to the state before it", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, {
+      tasks: {
+        fix: { run: `${FIX_BAD} {staged_files}`, glob: "*.txt" },
+        fail: { run: "exit 3" },
+      },
+    });
+    const status = repo.git("status", "--porcelain");
+
+    const result = ward(repo, ["run", "pre-commit"]);
+
+    expect(result.status).toBe(3);
+    expect(result.stderr).toContain(
+      "ward: reverted the index and working tree to the state before the run",
+    );
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "bad").trim());
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "bad").replace("j", "J"),
+    );
+    expect(repo.git("status", "--porcelain")).toBe(status);
+    expect(repo.git("stash", "list")).toBe("");
+    expect(existsSync(join(repo.dir, ".git/ward/unstaged.patch"))).toBe(false);
+  });
+
+  it("reverts when unstaged changes conflict with a fix", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, [`${format()} {staged_files}`]);
+
+    const { status, stderr } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "ward: unstaged changes could not be put back on top of task fixes in a.txt",
+    );
+    expect(stderr).toContain("ward: reverted the index and working tree");
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "bad").trim());
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "bad").replace("j", "J"),
+    );
+    expect(existsSync(join(repo.dir, ".git/ward/unstaged.patch"))).toBe(false);
+  });
+
+  it("keeps task changes with `revert: false`", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, {
+      revert: false,
+      tasks: {
+        fix: { run: `${FIX_BAD} {staged_files}`, glob: "*.txt" },
+        fail: { run: "exit 3" },
+      },
+    });
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(3);
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "good").trim());
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "good").replace("j", "J"),
+    );
+    expect(repo.git("stash", "list", "--format=%gs")).toBe("ward backup");
+  });
+
+  it("only restores unstaged changes without a backup", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo, {
+      backup: false,
+      tasks: {
+        fix: { run: `${FIX_BAD} {staged_files}`, glob: "*.txt" },
+        fail: { run: "exit 3" },
+      },
+    });
+
+    const { status, stderr } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(3);
+    expect(stderr).not.toContain("reverted");
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "good").trim());
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "good").replace("j", "J"),
+    );
   });
 
   it("does not hide changes from tasks that get no staged files", () => {
@@ -1001,6 +1082,12 @@ describe("parseRunArgs", () => {
       hook: "pre-commit",
       args: ["a", "b"],
       backup: false,
+    });
+    expect(parseRunArgs(["pre-commit", "--no-revert", "--no-backup"])).toEqual({
+      hook: "pre-commit",
+      args: [],
+      backup: false,
+      revert: false,
     });
   });
 
@@ -1167,6 +1254,37 @@ describe("ward run from git", () => {
     expect(repo.git("status", "--porcelain", "--untracked-files=no")).toBe(
       "M a.txt",
     );
+  });
+
+  posixOnly("reverts a failed `git commit -a` to the state before it", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n", "b.txt": "b\n" });
+    repo.write(
+      "ward.yml",
+      `hooks:\n  pre-commit: [${JSON.stringify(`${format()} {staged_files}`)}, exit 5]\n`,
+    );
+    installStubs(repo);
+    repo.git("add", "ward.yml");
+    repo.write("a.txt", "a2\n");
+    repo.write("b.txt", "b2\n");
+    repo.git("add", "b.txt");
+    const status = repo.git("status", "--porcelain", "--untracked-files=no");
+
+    const result = spawnSync("git", ["commit", "-a", "-m", "next"], {
+      cwd: repo.dir,
+      env: repo.env,
+      encoding: "utf8",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("ward: reverted");
+    expect(repo.git("log", "--format=%s")).toBe("init");
+    expect(readFileSync(join(repo.dir, "a.txt"), "utf8")).toBe("a2\n");
+    expect(readFileSync(join(repo.dir, "b.txt"), "utf8")).toBe("b2\n");
+    expect(repo.git("status", "--porcelain", "--untracked-files=no")).toBe(
+      status,
+    );
+    expect(repo.git("stash", "list")).toBe("");
   });
 
   posixOnly("blocks the commit on an invalid config", () => {

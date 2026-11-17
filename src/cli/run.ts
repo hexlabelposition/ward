@@ -13,10 +13,12 @@ export type RunOptions = {
   env?: NodeJS.ProcessEnv;
   /** `false` (`--no-backup`): skip the backup even if the config wants it. */
   backup?: boolean;
+  /** `false` (`--no-revert`): keep task changes when the hook fails. */
+  revert?: boolean;
 };
 
 /** Flags of `ward run` itself, given right after the hook name. */
-const RUN_FLAGS = ["--no-backup"] as const;
+const RUN_FLAGS = ["--no-backup", "--no-revert"] as const;
 
 /**
  * Split `ward run` arguments into the hook, Ward's own flags and the hook
@@ -27,6 +29,7 @@ const RUN_FLAGS = ["--no-backup"] as const;
 export function parseRunArgs(argv: readonly string[]): RunOptions {
   const [hook, ...rest] = argv;
   let backup = true;
+  let revert = true;
   let i = 0;
   for (; i < rest.length; i++) {
     const arg = rest[i];
@@ -36,8 +39,14 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
     }
     if (!(RUN_FLAGS as readonly (string | undefined)[]).includes(arg)) break;
     if (arg === "--no-backup") backup = false;
+    if (arg === "--no-revert") revert = false;
   }
-  return { hook, args: rest.slice(i), ...(!backup && { backup }) };
+  return {
+    hook,
+    args: rest.slice(i),
+    ...(!backup && { backup }),
+    ...(!revert && { revert }),
+  };
 }
 
 /**
@@ -48,7 +57,9 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
  * tasks run in order and the first failure is the exit code.
  * `WARD=0` skips the hook, and so does a merge or rebase in progress.
  * The index and working tree are backed up before the tasks unless the hook
- * sets `backup: false` or `--no-backup` is given.
+ * sets `backup: false` or `--no-backup` is given, and the hook goes back to
+ * the backup when it fails unless it sets `revert: false` or `--no-revert`
+ * is given.
  */
 export async function run({
   hook,
@@ -56,6 +67,7 @@ export async function run({
   cwd = process.cwd(),
   env = process.env,
   backup = true,
+  revert = true,
 }: RunOptions): Promise<number> {
   if (hook === undefined) {
     console.error("ward run: missing hook name, e.g. `ward run pre-commit`");
@@ -91,6 +103,7 @@ export async function run({
   if (tasks.length === 0) return 0;
   const parallel = config?.hooks[hook]?.parallel === true;
   const withBackup = backup && config?.hooks[hook]?.backup !== false;
+  const withRevert = revert && config?.hooks[hook]?.revert !== false;
 
   // Imported only when there is something to run: keeps the no-op path fast.
   const { runHook } = await import("../runner/run-hook.ts");
@@ -102,5 +115,6 @@ export async function run({
     env,
     parallel,
     backup: withBackup,
+    revert: withRevert,
   });
 }

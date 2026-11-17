@@ -9,11 +9,13 @@ import {
 import { addFiles } from "../git/add.ts";
 import {
   createBackup,
+  discardHiddenChanges,
   dropBackup,
   type HiddenChanges,
   hideUnstagedChanges,
   RestoreError,
   restoreUnstagedChanges,
+  revertToBackup,
 } from "../git/backup.ts";
 import type { GitOptions } from "../git/exec.ts";
 import type { HookName } from "../hooks/list.ts";
@@ -42,6 +44,8 @@ export type RunHookOptions = {
   readStdin?: () => Promise<string>;
   /** Save the index and working tree before the first task. On by default. */
   backup?: boolean;
+  /** Go back to the backup when the hook fails. On by default. */
+  revert?: boolean;
 };
 
 /**
@@ -83,9 +87,15 @@ export type RunHookOptions = {
  *
  * Before the first task, the index and the tracked files of the working tree
  * are saved with `git stash create` as "ward backup" in `git stash list`
- * (unless `backup: false`). The entry is dropped when every task passes and
- * kept when the hook fails, with its hash printed, so the state before the
- * run can be restored by hand.
+ * (unless `backup: false`). When the hook fails (a task failed, or the
+ * unstaged changes conflict with its fixes), the index and working tree are
+ * reverted to it, unless `revert: false`. The entry is dropped when the hook
+ * passes or the revert worked; otherwise it is kept and its hash printed, so
+ * the state before the run can be restored by hand.
+ *
+ * Without a revert (no backup, or `revert: false`), task changes stay; hidden
+ * unstaged changes are put back on top of them, and a conflict leaves
+ * conflict markers in the files.
  */
 export async function runHook({
   hook,
@@ -96,6 +106,7 @@ export async function runHook({
   parallel = false,
   readStdin = readProcessStdin,
   backup = true,
+  revert = true,
 }: RunHookOptions): Promise<number> {
   const sources = new Set(tasks.flatMap((task) => taskSources(task, hook)));
   // Read before the first task: a task could otherwise consume it. Parallel
@@ -198,60 +209,93 @@ export async function runHook({
     return 0;
   };
 
-  /** `runTasks` with the unstaged changes hidden when tasks get staged files. */
-  const runHidden = async (): Promise<number> => {
-    const hidden = sources.has("staged")
-      ? hideUnstagedChanges(
-          filesOf("staged").map((file) => file.path),
-          git,
-        )
-      : null;
-    if (hidden === null) return runTasks();
-    let code: number;
-    try {
-      code = await runTasks();
-    } catch (error) {
-      restore(hidden, git);
-      throw error;
-    }
-    return restore(hidden, git) || code !== 0 ? code : 1;
-  };
-
   const hash = backup ? createBackup(git) : null;
-  if (hash === null) return runHidden();
-  let passed = false;
+  // Without a backup there is nothing to revert to.
+  const reverting = hash !== null && revert;
+  const keep = (hash: string) => {
+    console.error(
+      `ward: the index and working tree before the run are kept as "ward backup" in \`git stash list\` (${hash})`,
+    );
+  };
+  // Tasks that get staged files see only what is committed.
+  const hidden = sources.has("staged")
+    ? hideUnstagedChanges(
+        filesOf("staged").map((file) => file.path),
+        git,
+      )
+    : null;
+
+  let code: number;
   try {
-    const code = await runHidden();
-    passed = code === 0;
-    return code;
-  } finally {
-    if (passed) {
-      dropBackup(hash, git);
-    } else {
-      console.error(
-        `ward: the index and working tree before the run are kept as "ward backup" in \`git stash list\` (${hash})`,
-      );
+    code = await runTasks();
+  } catch (error) {
+    // Not a failed task but a failure of Ward or git: put the unstaged
+    // changes back and keep the backup, without reverting.
+    if (hidden !== null) restore(hidden, git, false);
+    if (hash !== null) keep(hash);
+    throw error;
+  }
+
+  if (hidden !== null) {
+    if (code !== 0 && reverting) {
+      // The revert brings them back with everything else.
+      discardHiddenChanges(hidden);
+    } else if (!restore(hidden, git, reverting)) {
+      if (code === 0) code = 1;
+      // The revert writes over the conflict markers.
+      if (reverting) discardHiddenChanges(hidden);
     }
   }
+
+  if (hash === null) return code;
+  if (code === 0) {
+    dropBackup(hash, git);
+  } else if (reverting) {
+    try {
+      revertToBackup(hash, git);
+    } catch (error) {
+      keep(hash);
+      throw error;
+    }
+    dropBackup(hash, git);
+    console.error(
+      "ward: reverted the index and working tree to the state before the run (`--no-revert` keeps the changes of the tasks)",
+    );
+  } else {
+    keep(hash);
+  }
+  return code;
 }
 
 /**
  * Put hidden unstaged changes back; `false` (reported) when they could not
  * be restored cleanly.
+ *
+ * @param reverting A revert follows, so the user has nothing to resolve.
  */
-function restore(hidden: HiddenChanges, git: GitOptions): boolean {
+function restore(
+  hidden: HiddenChanges,
+  git: GitOptions,
+  reverting: boolean,
+): boolean {
   try {
     restoreUnstagedChanges(hidden, git);
     return true;
   } catch (error) {
     if (!(error instanceof RestoreError)) throw error;
-    reportRestoreError(error);
+    reportRestoreError(error, reverting);
     return false;
   }
 }
 
-function reportRestoreError(error: RestoreError): void {
-  if (error.conflicts.length > 0) {
+function reportRestoreError(error: RestoreError, reverting: boolean): void {
+  if (reverting) {
+    const files =
+      error.conflicts.length > 0 ? ` in ${error.conflicts.join(", ")}` : "";
+    console.error(
+      `ward: unstaged changes could not be put back on top of task fixes${files}`,
+    );
+  } else if (error.conflicts.length > 0) {
     console.error(
       `ward: unstaged changes conflict with task fixes in ${error.conflicts.join(", ")}: resolve the conflict markers. The changes are also kept in ${error.patch}`,
     );
