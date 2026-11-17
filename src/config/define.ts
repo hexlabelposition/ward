@@ -72,6 +72,12 @@ export type HookConfig =
        * `false` skips it to save time in large repos.
        */
       backup?: boolean;
+      /**
+       * When a task fails, put the index and working tree back as they were
+       * before the run, from the backup. On by default; `false` keeps the
+       * tasks' changes for inspection. Needs `backup`.
+       */
+      revert?: boolean;
     };
 
 /** Contents of `ward.config.ts`, `ward.yml` or the `"ward"` section of `package.json`. */
