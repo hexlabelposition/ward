@@ -184,3 +184,45 @@ function gitPath(name: string, options: GitOptions): string {
   const path = git(["rev-parse", "--git-path", name], options);
   return resolve(options.cwd ?? process.cwd(), path);
 }
+
+/**
+ * Put the index and the tracked files back as they were in the backup
+ * (`createBackup`), undoing whatever the tasks changed.
+ *
+ * Only files that differ from the backup are written, so files the tasks
+ * did not touch keep their timestamps. A file the tasks added to the index
+ * is taken out of it but left on disk; untracked files are never touched.
+ */
+export function revertToBackup(hash: string, options: GitOptions = {}): void {
+  // `<status>` NUL `<path>` NUL; the backup is the old side.
+  const fields = git(
+    [
+      "diff",
+      "--name-status",
+      "-z",
+      "--no-renames",
+      "--ignore-submodules",
+      hash,
+      "--",
+    ],
+    options,
+  )
+    .split("\0")
+    .filter((field) => field !== "");
+  const changed: string[] = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    // `A`: not in the backup, nothing to write back.
+    if (fields[i] !== "A") changed.push(fields[i + 1] ?? "");
+  }
+  for (const chunk of chunkPaths(changed, MAX_PATHS_LENGTH)) {
+    git(["--literal-pathspecs", "checkout", hash, "--", ...chunk], options);
+  }
+  // The stash's second parent holds the whole index. `reset` with a path
+  // rewrites only the entries that differ, unlike `read-tree`.
+  git(["reset", "--quiet", `${hash}^2`, "--", "."], options);
+}
+
+/** Remove the patch of hidden changes once they no longer need to be applied. */
+export function discardHiddenChanges(hidden: HiddenChanges): void {
+  rmSync(hidden.patch, { force: true });
+}
