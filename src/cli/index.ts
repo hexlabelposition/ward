@@ -4,10 +4,10 @@ import { parseArgs } from "node:util";
 // Commands are imported lazily to keep startup fast (W49).
 async function main(argv: string[]): Promise<number> {
   if (argv[0] === "run") {
-    // Hook args from git are passed through as is, so they are not parsed here.
-    const [hook, ...args] = argv.slice(1);
-    const { run } = await import("./run.ts");
-    return run({ hook, args });
+    // Hook args from git are passed through as is: only Ward's own flags
+    // right after the hook name are read.
+    const { parseRunArgs, run } = await import("./run.ts");
+    return run(parseRunArgs(argv.slice(1)));
   }
 
   const { positionals, values } = parseArgs({

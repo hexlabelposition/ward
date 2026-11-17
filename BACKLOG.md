@@ -80,7 +80,7 @@ Done when: this repo runs its own Prettier and ESLint through Ward on staged fil
 
 ARCHITECTURE "Partial staging and backup".
 
-- [ ] **W35** Backup via `git stash create` before every run; `--no-backup` / `backup: false` for large repos
+- [x] **W35** Backup via `git stash create` before every run; `--no-backup` / `backup: false` for large repos
 - [ ] **W36** Partial staging: hide unstaged hunks, run, restore with `git apply --3way`
 - [ ] **W37** Revert from backup when a task fails; `--no-revert` / `revert: false`
 - [ ] **W38** Handle: binary files, renames, deletions, merge in progress, symlinks

@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseRunArgs } from "../../src/cli/run.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 
 const CLI = resolve(import.meta.dirname, "../../src/cli/index.ts");
@@ -796,6 +797,124 @@ export default { hooks: { "pre-commit": { tasks: { format: {
   });
 });
 
+describe("ward run backup", () => {
+  /** Prints the stash list, to see the backup while the tasks run. */
+  const LIST_STASH = "git stash list --format=%gs";
+
+  it("backs up before the tasks and drops the backup when they pass", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n" });
+    writeHook(repo, [LIST_STASH]);
+    repo.write("a.ts", "a2\n");
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("ward backup\n");
+    expect(repo.git("stash", "list")).toBe("");
+  });
+
+  it("keeps the state before the run when a task fails", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n" });
+    writeHook(repo, [`${format(1)} {staged_files}`]);
+    repo.git("add", "package.json");
+    repo.write("a.ts", "a2\n");
+    repo.git("add", "a.ts");
+    repo.write("a.ts", "a3\n");
+
+    const { status, stderr } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(1);
+    const hash = repo.git("stash", "list", "--format=%H");
+    expect(repo.git("stash", "list", "--format=%gs")).toBe("ward backup");
+    expect(stderr).toContain(
+      `ward: the index and working tree before the run are kept as "ward backup" in \`git stash list\` (${hash})`,
+    );
+    expect(repo.git("show", `${hash}:a.ts`)).toBe("a3");
+    expect(repo.git("show", `${hash}^2:a.ts`)).toBe("a2");
+  });
+
+  it("skips the backup with `backup: false`", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n" });
+    writeHook(repo, { backup: false, tasks: { list: { run: LIST_STASH } } });
+    repo.write("a.ts", "a2\n");
+
+    expect(ward(repo, ["run", "pre-commit"])).toMatchObject({
+      status: 0,
+      stdout: "",
+    });
+  });
+
+  it("skips the backup with --no-backup and passes the rest to the hook", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n" });
+    writeHook(repo, [LIST_STASH, `${node(PRINT_ARGS)} {1}`]);
+    repo.write("a.ts", "a2\n");
+
+    expect(ward(repo, ["run", "pre-commit", "--no-backup", "x"])).toMatchObject(
+      { status: 0, stdout: "x\n" },
+    );
+  });
+
+  it("creates no backup without changes or without a commit", () => {
+    using repo = createTempRepo();
+    writeHook(repo, ["true"]);
+    repo.git("add", "package.json");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+
+    repo.commit("init");
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("stash", "list")).toBe("");
+  });
+
+  it("leaves the user's stash entries alone", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n" });
+    repo.write("a.ts", "mine\n");
+    repo.git("stash", "push", "--quiet", "-m", "mine");
+    writeHook(repo, ["true"]);
+    repo.write("a.ts", "a2\n");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("stash", "list", "--format=%gs")).toBe("On main: mine");
+  });
+});
+
+describe("parseRunArgs", () => {
+  it("reads Ward's flags right after the hook name", () => {
+    expect(parseRunArgs(["pre-commit", "--no-backup", "a", "b"])).toEqual({
+      hook: "pre-commit",
+      args: ["a", "b"],
+      backup: false,
+    });
+  });
+
+  it("passes everything from the first other argument to the hook", () => {
+    expect(parseRunArgs(["commit-msg", "msg", "--no-backup"])).toEqual({
+      hook: "commit-msg",
+      args: ["msg", "--no-backup"],
+    });
+    expect(parseRunArgs(["pre-push", "--other", "--no-backup"])).toEqual({
+      hook: "pre-push",
+      args: ["--other", "--no-backup"],
+    });
+  });
+
+  it("ends Ward's flags at `--`", () => {
+    expect(parseRunArgs(["pre-push", "--", "--no-backup"])).toEqual({
+      hook: "pre-push",
+      args: ["--no-backup"],
+    });
+  });
+
+  it("leaves the hook undefined without arguments", () => {
+    expect(parseRunArgs([])).toEqual({ hook: undefined, args: [] });
+  });
+});
+
 // Through the stubs: git runs the hook, the hook runs `ward run`.
 
 /** Install the stubs, with `node_modules/.bin/ward` pointing at the source CLI. */
@@ -880,6 +999,30 @@ describe("ward run from git", () => {
 
     expect(commit(repo).status).toBe(0);
     expect(repo.git("log", "--format=%s")).toBe("init");
+  });
+
+  posixOnly("backs up during `git commit -a` and drops the backup", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n" });
+    repo.write(
+      "ward.yml",
+      "hooks:\n  pre-commit: git stash list --format=%gs\n",
+    );
+    installStubs(repo);
+    repo.git("add", "ward.yml");
+    repo.write("a.txt", "a2\n");
+
+    const result = spawnSync("git", ["commit", "-a", "-m", "next"], {
+      cwd: repo.dir,
+      env: repo.env,
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    // Git sends hook output to stderr.
+    expect(result.stderr).toContain("ward backup");
+    expect(repo.git("stash", "list")).toBe("");
+    expect(repo.git("show", "HEAD:a.txt")).toBe("a2");
   });
 
   posixOnly("blocks the commit on an invalid config", () => {

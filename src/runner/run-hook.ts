@@ -7,6 +7,7 @@ import {
   parsePushInput,
 } from "../git/files.ts";
 import { addFiles } from "../git/add.ts";
+import { createBackup, dropBackup } from "../git/backup.ts";
 import type { GitOptions } from "../git/exec.ts";
 import type { HookName } from "../hooks/list.ts";
 import {
@@ -32,6 +33,8 @@ export type RunHookOptions = {
   parallel?: boolean;
   /** The hook's stdin, read in full. Defaults to `process.stdin`. */
   readStdin?: () => Promise<string>;
+  /** Save the index and working tree before the first task. On by default. */
+  backup?: boolean;
 };
 
 /**
@@ -64,6 +67,12 @@ export type RunHookOptions = {
  * Each source is read from git once per run, when a task first needs it.
  * Push files come from the `pre-push` refs on stdin, so every task then gets
  * a copy of it on its own stdin.
+ *
+ * Before the first task, the index and the tracked files of the working tree
+ * are saved with `git stash create` as "ward backup" in `git stash list`
+ * (unless `backup: false`). The entry is dropped when every task passes and
+ * kept when the hook fails, with its hash printed, so the state before the
+ * run can be restored by hand.
  */
 export async function runHook({
   hook,
@@ -73,6 +82,7 @@ export async function runHook({
   env = process.env,
   parallel = false,
   readStdin = readProcessStdin,
+  backup = true,
 }: RunHookOptions): Promise<number> {
   const sources = new Set(tasks.flatMap((task) => taskSources(task, hook)));
   // Read before the first task: a task could otherwise consume it. Parallel
@@ -153,23 +163,44 @@ export async function runHook({
     };
   };
 
-  if (parallel) {
-    // Every task is prepared before the first one starts, so none of them
-    // sees files another task already changed.
-    // Output is prefixed with the task's name, so it is clear what printed
-    // what while they run together.
-    const names = tasks.map((task) => task.name);
-    const jobs = tasks.map((task, i) => prepare(task, taskPrefixes(names, i)));
-    const codes = await Promise.all(
-      jobs.map((job) => (job ? job() : Promise.resolve(0))),
-    );
-    return codes.find((code) => code !== 0) ?? 0;
+  const runTasks = async (): Promise<number> => {
+    if (parallel) {
+      // Every task is prepared before the first one starts, so none of them
+      // sees files another task already changed.
+      // Output is prefixed with the task's name, so it is clear what printed
+      // what while they run together.
+      const names = tasks.map((task) => task.name);
+      const jobs = tasks.map((task, i) =>
+        prepare(task, taskPrefixes(names, i)),
+      );
+      const codes = await Promise.all(
+        jobs.map((job) => (job ? job() : Promise.resolve(0))),
+      );
+      return codes.find((code) => code !== 0) ?? 0;
+    }
+    for (const task of tasks) {
+      const code = (await prepare(task)?.()) ?? 0;
+      if (code !== 0) return code;
+    }
+    return 0;
+  };
+
+  const hash = backup ? createBackup(git) : null;
+  if (hash === null) return runTasks();
+  let passed = false;
+  try {
+    const code = await runTasks();
+    passed = code === 0;
+    return code;
+  } finally {
+    if (passed) {
+      dropBackup(hash, git);
+    } else {
+      console.error(
+        `ward: the index and working tree before the run are kept as "ward backup" in \`git stash list\` (${hash})`,
+      );
+    }
   }
-  for (const task of tasks) {
-    const code = (await prepare(task)?.()) ?? 0;
-    if (code !== 0) return code;
-  }
-  return 0;
 }
 
 /**

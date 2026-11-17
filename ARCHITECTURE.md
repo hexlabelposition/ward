@@ -230,6 +230,10 @@ Approach (same idea as lint-staged):
 6. Re-apply the unstaged patch (`git apply --3way`).
 7. On task failure → restore from backup hash and report. `--no-revert` / `revert: false` keeps task changes for inspection. Without a backup a full revert is not possible; only the unstaged patch is restored.
 
+The backup (`git/backup.ts`) is taken before the first task of every hook that has tasks. The stash commit is also stored in `git stash list` as "ward backup", so it survives a killed run and can be restored by hand; it is dropped when every task passes and kept, with its hash printed, when the hook fails. It is found by hash, not by position, since a task may push or pop stash entries. No changes or no commit yet (`git stash create` has nothing to base on) → no backup. Untracked files are not part of it. Inside `git commit -a` / `git commit <paths>` it records the index git passes in `GIT_INDEX_FILE`, the one being committed.
+
+`--no-backup` is read only right after the hook name (`ward run pre-commit --no-backup`): the stubs pass git's hook arguments unparsed, so anything after the first other argument, or after `--`, goes to the hook.
+
 Edge cases to cover with tests: binary files, renames, deleted files, merge in progress, empty commit after formatting, non-ASCII paths, symlinks.
 
 ### Existing hooks
