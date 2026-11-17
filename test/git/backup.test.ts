@@ -1,6 +1,36 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createBackup, dropBackup } from "../../src/git/backup.ts";
-import { createTempRepo } from "../helpers/git-repo.ts";
+import {
+  createBackup,
+  dropBackup,
+  type HiddenChanges,
+  hideUnstagedChanges,
+  RestoreError,
+  restoreUnstagedChanges,
+} from "../../src/git/backup.ts";
+import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
+
+const LINES = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
+
+/** `a.txt` with its first line staged and its last line changed but not staged. */
+function partiallyStaged(repo: TempRepo) {
+  repo.commit("init", { "a.txt": LINES, "b.txt": "b\n" });
+  repo.write("a.txt", LINES.replace("a", "A"));
+  repo.git("add", "a.txt");
+  repo.write("a.txt", LINES.replace("a", "A").replace("j", "J"));
+}
+
+/** Hide the unstaged changes, expecting some. */
+function hide(repo: TempRepo, staged = ["a.txt"]): HiddenChanges {
+  const hidden = hideUnstagedChanges(staged, { cwd: repo.dir, env: repo.env });
+  if (hidden === null) throw new Error("expected hidden changes");
+  return hidden;
+}
+
+function read(repo: TempRepo, path: string) {
+  return readFileSync(join(repo.dir, path), "utf8");
+}
 
 describe("createBackup", () => {
   it("saves the index and the working tree without touching them", () => {
@@ -79,5 +109,138 @@ describe("dropBackup", () => {
     expect(() => {
       dropBackup(hash, { cwd: repo.dir, env: repo.env });
     }).not.toThrow();
+  });
+});
+
+describe("hideUnstagedChanges", () => {
+  it("resets partially staged files to the index and saves a patch", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo);
+    // Unstaged only: not hidden.
+    repo.write("b.txt", "b2\n");
+
+    const hidden = hideUnstagedChanges(["a.txt"], {
+      cwd: repo.dir,
+      env: repo.env,
+    });
+
+    expect(hidden?.files).toEqual(["a.txt"]);
+    expect(hidden?.patch).toBe(join(repo.dir, ".git/ward/unstaged.patch"));
+    expect(read(repo, "a.txt")).toBe(LINES.replace("a", "A"));
+    expect(read(repo, "b.txt")).toBe("b2\n");
+    expect(readFileSync(String(hidden?.patch), "utf8")).toContain("+J");
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "A").trim());
+  });
+
+  it("returns null when no staged file has unstaged changes", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n", "b.txt": "b\n" });
+    repo.write("a.txt", "a2\n");
+    repo.git("add", "a.txt");
+    repo.write("b.txt", "b2\n");
+
+    expect(
+      hideUnstagedChanges(["a.txt"], { cwd: repo.dir, env: repo.env }),
+    ).toBeNull();
+    expect(existsSync(join(repo.dir, ".git/ward"))).toBe(false);
+  });
+
+  it("keeps bytes that are not UTF-8", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n" });
+    repo.write("a.txt", "a2\n");
+    repo.git("add", "a.txt");
+    const latin1 = Buffer.from("a2\ncaf\xe9\n", "latin1");
+    writeFileSync(join(repo.dir, "a.txt"), latin1);
+    const git = { cwd: repo.dir, env: repo.env };
+
+    restoreUnstagedChanges(hide(repo), git);
+
+    expect(readFileSync(join(repo.dir, "a.txt"))).toEqual(latin1);
+  });
+});
+
+describe("restoreUnstagedChanges", () => {
+  it("puts the changes back on top of task fixes, leaving the index alone", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo);
+    const git = { cwd: repo.dir, env: repo.env };
+    const hidden = hide(repo);
+    // A task fixes a line away from the unstaged change and stages it.
+    repo.write("a.txt", LINES.replace("a", "A!"));
+    repo.git("add", "a.txt");
+
+    restoreUnstagedChanges(hidden, git);
+
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "A!").replace("j", "J"),
+    );
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "A!").trim());
+    expect(existsSync(hidden.patch)).toBe(false);
+  });
+
+  it("merges the changes into lines next to a task fix", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo);
+    const git = { cwd: repo.dir, env: repo.env };
+    const hidden = hide(repo);
+    // In the context of the unstaged change, so a plain apply fails, but not
+    // next to it: git merges changes two lines apart.
+    repo.write("a.txt", LINES.replace("a", "A").replace("g", "G"));
+    repo.git("add", "a.txt");
+
+    restoreUnstagedChanges(hidden, git);
+
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "A").replace("g", "G").replace("j", "J"),
+    );
+    expect(repo.git("show", ":a.txt")).toBe(
+      LINES.replace("a", "A").replace("g", "G").trim(),
+    );
+    expect(repo.git("status", "--porcelain")).toBe("MM a.txt");
+  });
+
+  it("merges into a task fix that was not staged", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo);
+    const git = { cwd: repo.dir, env: repo.env };
+    const hidden = hide(repo);
+    repo.write("a.txt", LINES.replace("a", "A").replace("g", "G"));
+
+    restoreUnstagedChanges(hidden, git);
+
+    expect(read(repo, "a.txt")).toBe(
+      LINES.replace("a", "A").replace("g", "G").replace("j", "J"),
+    );
+    expect(repo.git("show", ":a.txt")).toBe(LINES.replace("a", "A").trim());
+  });
+
+  it("leaves conflict markers and keeps the patch when changes overlap", () => {
+    using repo = createTempRepo();
+    partiallyStaged(repo);
+    const git = { cwd: repo.dir, env: repo.env };
+    const hidden = hide(repo);
+    repo.write("a.txt", LINES.replace("a", "A").replace("j", "j;"));
+    repo.git("add", "a.txt");
+
+    let error: unknown;
+    try {
+      restoreUnstagedChanges(hidden, git);
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeInstanceOf(RestoreError);
+    expect(error).toMatchObject({
+      conflicts: ["a.txt"],
+      patch: hidden.patch,
+    });
+    expect(read(repo, "a.txt")).toContain("<<<<<<<");
+    expect(existsSync(hidden.patch)).toBe(true);
+    // The index still holds what the task staged.
+    expect(repo.git("show", ":a.txt")).toBe(
+      LINES.replace("a", "A").replace("j", "j;").trim(),
+    );
+    expect(existsSync(`${hidden.patch}.index`)).toBe(false);
   });
 });
