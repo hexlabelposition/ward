@@ -1,5 +1,7 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { git, GitError } from "../../src/git/exec.ts";
+import { git, gitBuffer, GitError } from "../../src/git/exec.ts";
 import { createTempRepo } from "../helpers/git-repo.ts";
 
 describe("git", () => {
@@ -24,5 +26,19 @@ describe("git", () => {
     expect(error).toBeInstanceOf(GitError);
     expect(error).toMatchObject({ status: 128 });
     expect((error as GitError).stderr).toMatch(/nope|fatal/);
+  });
+});
+
+describe("gitBuffer", () => {
+  it("returns stdout as bytes, trailing newline included", () => {
+    using repo = createTempRepo();
+    const latin1 = Buffer.from("caf\xe9\n", "latin1");
+    repo.commit("init");
+    writeFileSync(join(repo.dir, "a.txt"), latin1);
+    repo.git("add", "a.txt");
+
+    expect(
+      gitBuffer(["show", ":a.txt"], { cwd: repo.dir, env: repo.env }),
+    ).toEqual(latin1);
   });
 });
