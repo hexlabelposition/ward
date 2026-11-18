@@ -297,7 +297,7 @@ function reportRestoreError(error: RestoreError, reverting: boolean): void {
     );
   } else if (error.conflicts.length > 0) {
     console.error(
-      `ward: unstaged changes conflict with task fixes in ${error.conflicts.join(", ")}: resolve the conflict markers. The changes are also kept in ${error.patch}`,
+      `ward: unstaged changes conflict with task fixes in ${error.conflicts.join(", ")}: resolve the conflicts (text files have conflict markers, binary files keep the tasks' version). The unstaged changes are also kept in ${error.patch}`,
     );
   } else {
     console.error(

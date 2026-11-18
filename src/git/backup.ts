@@ -9,7 +9,11 @@ export const BACKUP_MESSAGE = "ward backup";
 /**
  * Save the index and the tracked files of the working tree as a stash commit
  * and return its hash; `null` when there is nothing to save (no changes, or
- * no commit yet to base a stash on).
+ * no commit yet to base a stash on) or it can't be saved: the index has
+ * unresolved conflicts (`git ls-files --unmerged`), which `git stash create`
+ * refuses. `git commit` refuses them too, so this only happens in hooks other
+ * than `pre-commit` (`post-checkout` after `git checkout -m`) or when
+ * `ward run` is called by hand.
  *
  * `git stash create` writes the commit without touching the working tree or
  * the index. The commit is also added to `git stash list` as "ward backup",
@@ -23,6 +27,7 @@ export function createBackup(options: GitOptions = {}): string | null {
   // Without a commit, `git stash create` fails: "You do not have the initial
   // commit yet".
   if (!hasHead(options)) return null;
+  if (git(["ls-files", "--unmerged", "-z"], options) !== "") return null;
   const hash = git(["stash", "create", BACKUP_MESSAGE], options);
   if (hash === "") return null;
   git(["stash", "store", "--quiet", "-m", BACKUP_MESSAGE, hash], options);
@@ -54,15 +59,26 @@ function hasHead(options: GitOptions): boolean {
 
 /** Unstaged changes taken out of partially staged files while tasks run. */
 export type HiddenChanges = {
-  /** Files whose unstaged changes were hidden, relative to the repo root. */
+  /**
+   * Files whose unstaged changes are in the patch, relative to the repo
+   * root.
+   */
   readonly files: readonly string[];
+  /**
+   * Staged files deleted in the working tree: checked out for the tasks,
+   * deleted again afterwards.
+   */
+  readonly deleted: readonly string[];
   /** Absolute path of the patch that holds them, in the git dir. */
   readonly patch: string;
 };
 
 /** The unstaged changes could not be put back. */
 export class RestoreError extends Error {
-  /** Files left with conflict markers; empty when nothing was applied. */
+  /**
+   * Files git could not merge: text files get conflict markers, binary files
+   * keep the tasks' version. Empty when nothing was applied.
+   */
   readonly conflicts: readonly string[];
   /** Where the patch of the unstaged changes is kept. */
   readonly patch: string;
@@ -85,7 +101,10 @@ const PATCH = "ward/unstaged.patch";
  * version, so a killed run leaves them recoverable. `null` when no staged
  * file has unstaged changes.
  *
- * Files deleted in the working tree are left as they are (W38).
+ * A staged file deleted in the working tree is checked out too, so tasks
+ * can read it, and deleted again by `restoreUnstagedChanges`; it is not in
+ * the patch. Binary files, symlinks, renamed files (by their new path) and
+ * type changes (file ↔ symlink) go through the patch like any other change.
  *
  * @param staged Staged files, relative to the repo root (`cwd`).
  */
@@ -94,13 +113,28 @@ export function hideUnstagedChanges(
   options: GitOptions = {},
 ): HiddenChanges | null {
   const stagedSet = new Set(staged);
-  const files = git(
-    ["diff", "--name-only", "-z", "--diff-filter=d", "--ignore-submodules"],
+  // `<status>` NUL `<path>` NUL, index against the working tree.
+  const fields = git(
+    ["diff", "--name-status", "-z", "--no-renames", "--ignore-submodules"],
     options,
   )
     .split("\0")
-    .filter((path) => path !== "" && stagedSet.has(path));
-  if (files.length === 0) return null;
+    .filter((field) => field !== "");
+  const entries: [status: string, path: string][] = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    entries.push([fields[i] ?? "", fields[i + 1] ?? ""]);
+  }
+  // An unmerged file is listed as `U` and once more as modified.
+  const unmerged = new Set(
+    entries.filter(([status]) => status === "U").map(([, path]) => path),
+  );
+  const files: string[] = [];
+  const deleted: string[] = [];
+  for (const [status, path] of entries) {
+    if (!stagedSet.has(path) || unmerged.has(path)) continue;
+    (status === "D" ? deleted : files).push(path);
+  }
+  if (files.length === 0 && deleted.length === 0) return null;
 
   const patch = gitPath(PATCH, options);
   mkdirSync(dirname(patch), { recursive: true });
@@ -124,10 +158,10 @@ export function hideUnstagedChanges(
   );
   writeFileSync(patch, Buffer.concat(chunks));
 
-  for (const chunk of chunkPaths(files, MAX_PATHS_LENGTH)) {
+  for (const chunk of chunkPaths([...files, ...deleted], MAX_PATHS_LENGTH)) {
     git(["checkout-index", "--force", "--", ...chunk], options);
   }
-  return { files, patch };
+  return { files, deleted, patch };
 }
 
 /**
@@ -139,16 +173,26 @@ export function hideUnstagedChanges(
  * the unstaged changes. Otherwise the patch is merged in with
  * `git apply --3way`, against a copy of the index that matches the working
  * tree, so the real index is left alone. The patch file is removed once the
- * changes are back.
+ * changes are back. Files deleted in the working tree before the run are
+ * deleted again, whatever the tasks did to them.
  *
- * @throws RestoreError when the changes conflict with the task's (the files
- *   are left with conflict markers) or can't be applied at all; the patch is
- *   kept for both.
+ * @throws RestoreError when the changes conflict with the task's (text
+ *   files are left with conflict markers, binary files with the task's
+ *   version) or can't be applied at all; the patch is kept for both.
  */
 export function restoreUnstagedChanges(
   hidden: HiddenChanges,
   options: GitOptions = {},
 ): void {
+  const root = options.cwd ?? process.cwd();
+  for (const path of hidden.deleted) {
+    rmSync(resolve(root, path), { force: true });
+  }
+  if (hidden.files.length === 0) {
+    rmSync(hidden.patch, { force: true });
+    return;
+  }
+
   const apply = ["apply", "--whitespace=nowarn"];
   try {
     git([...apply, hidden.patch], options);
@@ -192,6 +236,8 @@ function gitPath(name: string, options: GitOptions): string {
  * Only files that differ from the backup are written, so files the tasks
  * did not touch keep their timestamps. A file the tasks added to the index
  * is taken out of it but left on disk; untracked files are never touched.
+ * A file that was in the index but deleted in the working tree at backup
+ * time is deleted again.
  */
 export function revertToBackup(hash: string, options: GitOptions = {}): void {
   // `<status>` NUL `<path>` NUL; the backup is the old side.
@@ -210,12 +256,35 @@ export function revertToBackup(hash: string, options: GitOptions = {}): void {
     .split("\0")
     .filter((field) => field !== "");
   const changed: string[] = [];
+  const added: string[] = [];
   for (let i = 0; i + 1 < fields.length; i += 2) {
-    // `A`: not in the backup, nothing to write back.
-    if (fields[i] !== "A") changed.push(fields[i + 1] ?? "");
+    // `A`: not in the backup's working tree, nothing to write back.
+    (fields[i] === "A" ? added : changed).push(fields[i + 1] ?? "");
   }
   for (const chunk of chunkPaths(changed, MAX_PATHS_LENGTH)) {
     git(["--literal-pathspecs", "checkout", hash, "--", ...chunk], options);
+  }
+  // In the backup's index but not its working tree: deleted by the user
+  // (and checked out for the tasks by `hideUnstagedChanges`).
+  const root = options.cwd ?? process.cwd();
+  for (const chunk of chunkPaths(added, MAX_PATHS_LENGTH)) {
+    const indexed = git(
+      [
+        "--literal-pathspecs",
+        "ls-tree",
+        "-r",
+        "-z",
+        "--name-only",
+        "--full-tree",
+        `${hash}^2`,
+        "--",
+        ...chunk,
+      ],
+      options,
+    );
+    for (const path of indexed.split("\0")) {
+      if (path !== "") rmSync(resolve(root, path), { force: true });
+    }
   }
   // The stash's second parent holds the whole index. `reset` with a path
   // rewrites only the entries that differ, unlike `read-tree`.

@@ -955,7 +955,7 @@ describe("ward run partial staging", () => {
 
     expect(status).toBe(1);
     expect(stderr).toContain(
-      "ward: unstaged changes conflict with task fixes in a.txt: resolve the conflict markers",
+      "ward: unstaged changes conflict with task fixes in a.txt: resolve the conflicts",
     );
     expect(read(repo, "a.txt")).toContain("<<<<<<<");
     expect(repo.git("show", ":a.txt")).toBe(
