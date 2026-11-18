@@ -1068,7 +1068,7 @@ describe("ward run partial staging", () => {
   it("runs without a backup while the index has conflicts", () => {
     using repo = createTempRepo();
     conflictingBranches(repo);
-    writeHook(repo, [LIST_STASH_ENTRIES, "echo ran"]);
+    writeHook(repo, [LIST_STASH_ENTRIES, node("console.log('ran')")]);
     repo.git("add", "package.json");
     repo.git("commit", "--quiet", "--no-verify", "-m", "config");
     spawnSync("git", ["cherry-pick", "other"], {
