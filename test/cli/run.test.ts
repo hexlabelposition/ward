@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
@@ -73,6 +74,9 @@ function conflictingBranches(repo: TempRepo) {
 }
 
 const posixOnly = process.platform === "win32" ? it.skip : it;
+
+/** Prints the stash list, to see a backup while the tasks run. */
+const LIST_STASH_ENTRIES = "git stash list --format=%gs";
 
 describe("ward run", () => {
   it("exits 0 without output when there is no config", () => {
@@ -800,7 +804,7 @@ export default { hooks: { "pre-commit": { tasks: { format: {
 
 describe("ward run backup", () => {
   /** Prints the stash list, to see the backup while the tasks run. */
-  const LIST_STASH = "git stash list --format=%gs";
+  const LIST_STASH = LIST_STASH_ENTRIES;
 
   it("backs up before the tasks and drops the backup when they pass", () => {
     using repo = createTempRepo();
@@ -1043,6 +1047,41 @@ describe("ward run partial staging", () => {
     expect(read(repo, "a.txt")).toBe(
       LINES.replace("a", "good").replace("j", "J"),
     );
+  });
+
+  it("runs tasks on a staged file deleted in the working tree", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n" });
+    writeHook(repo, {
+      tasks: { format: { run: `${format()} {staged_files}`, glob: "*.txt" } },
+    });
+    repo.git("add", "package.json");
+    repo.write("a.txt", "a2\n");
+    repo.git("add", "a.txt");
+    rmSync(join(repo.dir, "a.txt"));
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("show", ":a.txt")).toBe("A2");
+    expect(existsSync(join(repo.dir, "a.txt"))).toBe(false);
+  });
+
+  it("runs without a backup while the index has conflicts", () => {
+    using repo = createTempRepo();
+    conflictingBranches(repo);
+    writeHook(repo, [LIST_STASH_ENTRIES, "echo ran"]);
+    repo.git("add", "package.json");
+    repo.git("commit", "--quiet", "--no-verify", "-m", "config");
+    spawnSync("git", ["cherry-pick", "other"], {
+      cwd: repo.dir,
+      env: repo.env,
+    });
+    repo.write("b.txt", "b\n");
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("ran\n");
+    expect(existsSync(join(repo.dir, ".git/CHERRY_PICK_HEAD"))).toBe(true);
   });
 
   it("does not hide changes from tasks that get no staged files", () => {

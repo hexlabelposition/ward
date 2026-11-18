@@ -83,7 +83,7 @@ ARCHITECTURE "Partial staging and backup".
 - [x] **W35** Backup via `git stash create` before every run; `--no-backup` / `backup: false` for large repos
 - [x] **W36** Partial staging: hide unstaged hunks, run, restore with `git apply --3way`
 - [x] **W37** Revert from backup when a task fails; `--no-revert` / `revert: false`
-- [ ] **W38** Handle: binary files, renames, deletions, merge in progress, symlinks
+- [x] **W38** Handle: binary files, renames, deletions, merge in progress, symlinks
 - [ ] **W39** Detect "empty commit after formatting" and fail with clear message
 
 ### Dogfooding
