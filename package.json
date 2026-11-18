@@ -37,6 +37,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
+    "prepare": "tsdown && node dist/cli.mjs --bin dist/cli.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "format": "prettier --write .",

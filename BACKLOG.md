@@ -88,7 +88,8 @@ ARCHITECTURE "Partial staging and backup".
 
 ### Dogfooding
 
-- [ ] **W84** Dogfood: run this repo's Prettier and ESLint through Ward hooks
+- [x] **W86** Install `--bin <path>`: the binary the stubs call, for a repo without `node_modules/.bin/ward` (W84)
+- [x] **W84** Dogfood: run this repo's Prettier and ESLint through Ward hooks
 
 ## 0.3 - Bun and Deno
 

@@ -1,5 +1,9 @@
 # Contributing
 
+## Hooks
+
+This repo runs its own hooks through Ward (`ward.config.ts`): `pre-commit` runs ESLint and Prettier on staged files. `bun install` builds `dist/` and installs the hooks with `--bin dist/cli.mjs`, so they run the last build, not `src/`. Rebuild with `bun run build` (or keep `bun run dev` running) to try your changes on a real commit. Skip the hooks with `WARD=0 git commit` when the build is broken.
+
 ## Releases
 
 A release is a `vX.Y.Z` tag on a commit whose `package.json` has the same version.
