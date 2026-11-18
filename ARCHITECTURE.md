@@ -232,7 +232,7 @@ Approach (same idea as lint-staged):
 
 The backup (`git/backup.ts`) is taken before the first task of every hook that has tasks. The stash commit is also stored in `git stash list` as "ward backup", so it survives a killed run and can be restored by hand; it is dropped when the hook passes or a revert worked, and kept, with its hash printed, otherwise (`--no-revert`, a failed revert, an error in Ward or git). It is found by hash, not by position, since a task may push or pop stash entries. No changes or no commit yet (`git stash create` has nothing to base on) → no backup. Untracked files are not part of it. Inside `git commit -a` / `git commit <paths>` it records the index git passes in `GIT_INDEX_FILE`, the one being committed.
 
-Partial staging (steps 2, 3, 6; `git/backup.ts`) runs only when a task gets staged files: `{staged_files}`, or a function task or `glob` / `exclude` without placeholders in `pre-commit`. A plain `npm test` sees the working tree as is. A partially staged file is a staged file (`ACMR`) with unstaged changes that are not a deletion (deletions: W38). The patch is written with fixed `a/` `b/` prefixes and no external diff or textconv, so user diff settings can't break it, and kept in `.git/ward/unstaged.patch` until it is applied, so a killed run leaves it recoverable. The unstaged changes are restored after the tasks, unless a revert follows (it brings them back with everything else):
+Partial staging (steps 2, 3, 6; `git/backup.ts`) runs only when a task gets staged files: `{staged_files}`, or a function task or `glob` / `exclude` without placeholders in `pre-commit`. A plain `npm test` sees the working tree as is. A partially staged file is a staged file (`ACMR`) with unstaged changes. The patch is written with fixed `a/` `b/` prefixes and no external diff or textconv, so user diff settings can't break it, and kept in `.git/ward/unstaged.patch` until it is applied, so a killed run leaves it recoverable. The unstaged changes are restored after the tasks, unless a revert follows (it brings them back with everything else):
 
 - A plain `git apply` first: it works when the tasks didn't touch the lines around the unstaged changes.
 - Otherwise `git apply --3way`. It applies to the index too, so it runs against a copy of the index (`GIT_INDEX_FILE`) where the files are added as the tasks left them; the real index keeps exactly what the tasks staged.
@@ -242,7 +242,15 @@ The revert (step 7, `revertToBackup`) writes back only the tracked files that di
 
 `--no-backup` and `--no-revert` are read only right after the hook name (`ward run pre-commit --no-backup`): the stubs pass git's hook arguments unparsed, so anything after the first other argument, or after `--`, goes to the hook.
 
-Edge cases to cover with tests: binary files, renames, deleted files, merge in progress, empty commit after formatting, non-ASCII paths, symlinks.
+Edge cases (`test/git/backup-edge.test.ts`):
+
+- **Binary files** go through the patch (`--binary`) and the backup like text. When a task and the unstaged changes both change one, git can't merge it: without a revert the file keeps the task's version and the patch is kept.
+- **Renames**: a staged rename is a staged file under its new path; its unstaged changes are hidden there. The old path is gone from the working tree and stays gone. The revert compares with `--no-renames`, so it sees the new path as changed and the old one as deleted, like the backup.
+- **Deletions**: a file deleted and staged (`git rm`) is not a staged file and is left alone. A staged file deleted only in the working tree is checked out from the index so tasks can read and fix it, kept out of the patch, and deleted again after the tasks; a fix to it stays staged. The revert deletes it too: it is in the backup's index but not its working tree.
+- **Merge in progress**: hooks are skipped during a merge or rebase (see "Merge and rebase"). A cherry-pick or revert that stopped on a conflict is not skipped: once the conflict is resolved and staged, the hook runs as usual, and the revert (path-limited `checkout` and `reset`, never `reset --hard`) leaves `CHERRY_PICK_HEAD` / `REVERT_HEAD` in place. While the index still has unresolved conflicts, `git stash create` fails, so there is no backup (and no revert) and conflicted files are never hidden; `git commit` refuses that state anyway, so this only happens with other hooks or `ward run` by hand.
+- **Symlinks** and file ↔ symlink type changes go through the patch, `checkout-index` and the revert as git stores them. Tasks still don't get symlinks unless `symlinks: true`.
+- **Non-ASCII paths**: every list is read with `-z` and paths are passed as arguments, so spaces, accents and newlines are kept as is.
+- **Empty commit after formatting**: W39.
 
 ### Existing hooks
 
