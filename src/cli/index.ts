@@ -17,6 +17,7 @@ async function main(argv: string[]): Promise<number> {
     options: {
       chain: { type: "boolean" },
       force: { type: "boolean" },
+      bin: { type: "string" },
       "respect-hooks-path": { type: "boolean" },
     },
   });
@@ -28,6 +29,7 @@ async function main(argv: string[]): Promise<number> {
       chain: values.chain ?? false,
       respectHooksPath: values["respect-hooks-path"] ?? false,
       force: values.force ?? false,
+      ...(values.bin === undefined ? {} : { bin: values.bin }),
     });
   }
 

@@ -164,6 +164,7 @@ An invalid config fails every hook, not only the broken one: a typo in a hook na
 | `--chain`              | Keep existing hooks and run Ward after them                    |
 | `--force`              | Replace existing hooks; the old ones are lost                  |
 | `--respect-hooks-path` | Install into the `core.hooksPath` directory instead of failing |
+| `--bin <path>`         | Binary the hooks call instead of `node_modules/.bin/ward`      |
 
 `ward` does nothing in CI (when `CI` is set), outside a git repository and when git is not installed, so `npm install` in Docker or CI does not fail.
 

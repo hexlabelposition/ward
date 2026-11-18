@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { getConfig } from "../git/config.ts";
 import { getRepoPaths, type RepoPaths } from "../git/paths.ts";
@@ -27,6 +27,12 @@ export type InstallOptions = {
   /** `--force`: replace foreign hooks with stubs, without asking. */
   force?: boolean;
   /**
+   * `--bin`: the ward binary the stubs call, relative to `cwd`. Default: the
+   * nearest `node_modules/.bin/ward`. For a layout without it, such as this
+   * repo running its own build.
+   */
+  bin?: string;
+  /**
    * Asks whether to chain the foreign hooks. Default: a y/N prompt when stdin
    * and stdout are a TTY; `null` when there is nobody to ask (`prepare` under
    * most package managers, IDEs), then foreign hooks are left as is.
@@ -46,6 +52,7 @@ export async function install({
   chain = false,
   respectHooksPath = false,
   force = false,
+  bin: binOption,
   confirm = defaultConfirm(),
 }: InstallOptions = {}): Promise<number> {
   // Checked first: no git process at all in CI.
@@ -77,20 +84,35 @@ export async function install({
     }
   }
 
+  // Checked before asking about foreign hooks: a typo should not cost an answer.
+  let bin: string;
+  if (binOption === undefined) {
+    bin = findBin(cwd, paths.root);
+  } else {
+    bin = resolve(cwd, binOption);
+    if (!isFile(bin)) {
+      console.error(`ward: --bin ${binOption}: no such file`);
+      return 1;
+    }
+  }
+
   const where = toPosix(relative(paths.root, paths.hooksDir));
   if (!chain && !force && confirm) {
     const foreign = findForeignHooks(paths.hooksDir);
     if (foreign.length > 0) chain = await confirm(foreign, where);
   }
 
-  const bin = findBin(cwd, paths.root);
   const result = installHooks(paths.hooksDir, {
     bin: toPosix(relative(paths.root, bin)),
     chain,
     force,
   });
 
-  const rerun = respectHooksPath ? "npx ward --respect-hooks-path" : "npx ward";
+  const rerun = [
+    "npx ward",
+    ...(respectHooksPath ? ["--respect-hooks-path"] : []),
+    ...(binOption === undefined ? [] : ["--bin", shellArg(binOption)]),
+  ].join(" ");
   report(result, where, rerun);
   return 0;
 }
@@ -224,6 +246,17 @@ function defaultConfirm(): InstallOptions["confirm"] {
       rl.close();
     }
   };
+}
+
+function isFile(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+}
+
+/** `value` as one shell word, quoted only when needed. */
+function shellArg(value: string): string {
+  return /^[\w./:@=+-]+$/.test(value)
+    ? value
+    : `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 export function toPosix(path: string): string {

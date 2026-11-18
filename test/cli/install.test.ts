@@ -65,6 +65,42 @@ describe("ward (install)", () => {
     );
   });
 
+  it("writes the --bin path, relative to the repo root", () => {
+    using repo = createTempRepo();
+    repo.write("packages/a/dist/cli.mjs", "");
+
+    const { status } = ward(
+      repo,
+      ["--bin", "dist/cli.mjs"],
+      join(repo.dir, "packages/a"),
+    );
+
+    expect(status).toBe(0);
+    expect(hook(repo, "pre-commit")).toContain("bin='packages/a/dist/cli.mjs'");
+  });
+
+  it("fails when the --bin file does not exist", () => {
+    using repo = createTempRepo();
+    repo.write("dist/.keep", "");
+
+    for (const bin of ["dist/cli.mjs", "dist"]) {
+      const { status, stderr } = ward(repo, ["--bin", bin]);
+      expect(status).toBe(1);
+      expect(stderr).toContain(`ward: --bin ${bin}: no such file`);
+    }
+    expect(existsSync(join(repo.dir, ".git/hooks/pre-commit"))).toBe(false);
+  });
+
+  it("keeps --bin in the --chain hint", () => {
+    using repo = createTempRepo();
+    repo.write("dist/cli.mjs", "");
+    repo.write(".git/hooks/pre-commit", "#!/bin/sh\necho mine\n");
+
+    const { stderr } = ward(repo, ["--bin", "dist/cli.mjs"]);
+
+    expect(stderr).toContain("npx ward --bin dist/cli.mjs --chain");
+  });
+
   it("warns about foreign hooks and keeps them", () => {
     using repo = createTempRepo();
     repo.write(".git/hooks/pre-commit", "#!/bin/sh\necho mine\n");
