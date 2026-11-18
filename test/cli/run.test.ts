@@ -1115,6 +1115,84 @@ describe("ward run partial staging", () => {
   });
 });
 
+describe("ward run empty commit", () => {
+  /** Removes trailing spaces from the files it gets. */
+  const TRIM = node(
+    "const fs = require('fs'); for (const f of process.argv.slice(1)) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/ +$/gm, ''))",
+  );
+
+  /** `a.txt` committed, then only a trailing space staged. */
+  function whitespaceOnly(repo: TempRepo, hook: unknown) {
+    writeHook(repo, hook);
+    repo.commit("init", { "a.txt": "a\n" });
+    repo.write("a.txt", "a \n");
+    repo.git("add", "a.txt");
+  }
+
+  it("fails when the tasks undo every staged change, and reverts", () => {
+    using repo = createTempRepo();
+    whitespaceOnly(repo, [`${TRIM} {staged_files}`]);
+
+    const { status, stderr } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "ward: pre-commit failed: the tasks undid every staged change, so the commit would be empty",
+    );
+    expect(stderr).toContain("ward: reverted");
+    expect(repo.git("diff", "--cached", "--name-only")).toBe("a.txt");
+    expect(repo.git("stash", "list")).toBe("");
+  });
+
+  it("keeps the fix with --no-revert", () => {
+    using repo = createTempRepo();
+    whitespaceOnly(repo, [`${TRIM} {staged_files}`]);
+
+    expect(ward(repo, ["run", "pre-commit", "--no-revert"]).status).toBe(1);
+    expect(repo.git("diff", "--cached", "--name-only")).toBe("");
+    expect(readFileSync(join(repo.dir, "a.txt"), "utf8")).toBe("a\n");
+  });
+
+  it("passes when something is left to commit", () => {
+    using repo = createTempRepo();
+    whitespaceOnly(repo, [`${TRIM} {staged_files}`]);
+    repo.write("b.txt", "b\n");
+    repo.git("add", "b.txt");
+
+    expect(ward(repo, ["run", "pre-commit"]).status).toBe(0);
+    expect(repo.git("diff", "--cached", "--name-only")).toBe("b.txt");
+  });
+
+  it("passes when nothing was staged before the run", () => {
+    using repo = createTempRepo();
+    writeHook(repo, [node("console.log('ran')")]);
+    repo.commit("init");
+
+    expect(ward(repo, ["run", "pre-commit"])).toMatchObject({
+      status: 0,
+      stdout: "ran\n",
+    });
+  });
+
+  it("only checks pre-commit", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "package.json",
+      JSON.stringify({
+        ward: { hooks: { "pre-push": [`${TRIM} {all_files}`] } },
+      }),
+    );
+    repo.commit("init", { "a.txt": "a\n" });
+    repo.write("a.txt", "a \n");
+    repo.git("add", "a.txt");
+
+    expect(
+      ward(repo, ["run", "pre-push", "origin", "url"], repo.dir, repo.env, "")
+        .status,
+    ).toBe(0);
+  });
+});
+
 describe("parseRunArgs", () => {
   it("reads Ward's flags right after the hook name", () => {
     expect(parseRunArgs(["pre-commit", "--no-backup", "a", "b"])).toEqual({
@@ -1324,6 +1402,39 @@ describe("ward run from git", () => {
       status,
     );
     expect(repo.git("stash", "list")).toBe("");
+  });
+
+  posixOnly("blocks a commit the tasks emptied, allows --allow-empty", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.txt": "a\n" });
+    repo.write(
+      "ward.yml",
+      `hooks:\n  pre-commit: ${JSON.stringify(`${node("const fs = require('fs'); for (const f of process.argv.slice(1)) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/ +$/gm, ''))")} {staged_files}`)}\n`,
+    );
+    installStubs(repo);
+    repo.git("add", "ward.yml");
+    repo.git("commit", "--quiet", "--no-verify", "-m", "config");
+    repo.write("a.txt", "a \n");
+    repo.git("add", "a.txt");
+
+    const blocked = spawnSync("git", ["commit", "-m", "spaces"], {
+      cwd: repo.dir,
+      env: repo.env,
+      encoding: "utf8",
+    });
+    expect(blocked.status).not.toBe(0);
+    expect(blocked.stderr).toContain("the commit would be empty");
+    expect(repo.git("log", "--format=%s")).toBe("config\ninit");
+    expect(repo.git("diff", "--cached", "--name-only")).toBe("a.txt");
+
+    repo.git("restore", "--staged", "--worktree", "a.txt");
+    const empty = spawnSync("git", ["commit", "--allow-empty", "-m", "empty"], {
+      cwd: repo.dir,
+      env: repo.env,
+      encoding: "utf8",
+    });
+    expect(empty.status).toBe(0);
+    expect(repo.git("log", "-1", "--format=%s")).toBe("empty");
   });
 
   posixOnly("blocks the commit on an invalid config", () => {

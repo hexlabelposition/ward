@@ -250,7 +250,7 @@ Edge cases (`test/git/backup-edge.test.ts`):
 - **Merge in progress**: hooks are skipped during a merge or rebase (see "Merge and rebase"). A cherry-pick or revert that stopped on a conflict is not skipped: once the conflict is resolved and staged, the hook runs as usual, and the revert (path-limited `checkout` and `reset`, never `reset --hard`) leaves `CHERRY_PICK_HEAD` / `REVERT_HEAD` in place. While the index still has unresolved conflicts, `git stash create` fails, so there is no backup (and no revert) and conflicted files are never hidden; `git commit` refuses that state anyway, so this only happens with other hooks or `ward run` by hand.
 - **Symlinks** and file ↔ symlink type changes go through the patch, `checkout-index` and the revert as git stores them. Tasks still don't get symlinks unless `symlinks: true`.
 - **Non-ASCII paths**: every list is read with `-z` and paths are passed as arguments, so spaces, accents and newlines are kept as is.
-- **Empty commit after formatting**: W39.
+- **Empty commit after formatting**: in `pre-commit`, Ward checks the index against `HEAD` (`git diff --cached --quiet`) before the run and after the tasks. If there were staged changes before and none are left (a formatter undid a whitespace-only change), git would make an empty commit, so the hook fails with a message that names `git commit --no-verify`, and the revert brings the staged change back. An index that already matched `HEAD` (`git commit --allow-empty`, `--amend` to reword) is not checked: git doesn't tell hooks about `--allow-empty`, so "nothing staged before the run" is the signal. Other hooks are not checked.
 
 ### Existing hooks
 
