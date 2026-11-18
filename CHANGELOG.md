@@ -2,7 +2,7 @@
 
 All notable changes to this project. `0.x` versions may break config and behavior (see [BACKLOG.md](./BACKLOG.md)).
 
-## Unreleased
+## 0.2.0 - 2026-11-18
 
 Tasks on staged files: Ward replaces lint-staged.
 
