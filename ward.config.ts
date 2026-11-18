@@ -1,6 +1,6 @@
 // This repo's own hooks: `prepare` builds dist/ and installs stubs that call
-// dist/cli.mjs (see CONTRIBUTING.md). defineConfig comes from src/, so the
-// config type-checks before dist/ is built.
+// dist/cli.mjs. defineConfig comes from src/, so the config type-checks
+// before dist/ is built.
 import { defineConfig } from "./src/index.ts";
 
 export default defineConfig({
