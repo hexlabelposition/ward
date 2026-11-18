@@ -84,7 +84,7 @@ ARCHITECTURE "Partial staging and backup".
 - [x] **W36** Partial staging: hide unstaged hunks, run, restore with `git apply --3way`
 - [x] **W37** Revert from backup when a task fails; `--no-revert` / `revert: false`
 - [x] **W38** Handle: binary files, renames, deletions, merge in progress, symlinks
-- [ ] **W39** Detect "empty commit after formatting" and fail with clear message
+- [x] **W39** Detect "empty commit after formatting" and fail with clear message
 
 ### Dogfooding
 

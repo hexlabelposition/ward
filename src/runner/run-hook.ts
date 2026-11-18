@@ -4,6 +4,7 @@ import {
   getPushFiles,
   getStagedFiles,
   type GitFile,
+  hasStagedChanges,
   parsePushInput,
 } from "../git/files.ts";
 import { addFiles } from "../git/add.ts";
@@ -92,6 +93,12 @@ export type RunHookOptions = {
  * reverted to it, unless `revert: false`. The entry is dropped when the hook
  * passes or the revert worked; otherwise it is kept and its hash printed, so
  * the state before the run can be restored by hand.
+ *
+ * In `pre-commit`, a run that leaves nothing to commit fails: the staged
+ * changes were there before the tasks and their fixes undid all of them
+ * (a formatter reverting a whitespace-only change), so git would make an
+ * empty commit. An index that already matched `HEAD` before the run
+ * (`git commit --allow-empty`) is let through.
  *
  * Without a revert (no backup, or `revert: false`), task changes stay; hidden
  * unstaged changes are put back on top of them, and a conflict leaves
@@ -209,6 +216,8 @@ export async function runHook({
     return 0;
   };
 
+  // Read before anything else touches the index.
+  const stagedBefore = hook === "pre-commit" && hasStagedChanges(git);
   const hash = backup ? createBackup(git) : null;
   // Without a backup there is nothing to revert to.
   const reverting = hash !== null && revert;
@@ -234,6 +243,14 @@ export async function runHook({
     if (hidden !== null) restore(hidden, git, false);
     if (hash !== null) keep(hash);
     throw error;
+  }
+
+  // The index is final here: putting back unstaged changes doesn't touch it.
+  if (code === 0 && stagedBefore && !hasStagedChanges(git)) {
+    console.error(
+      `ward: ${hook} failed: the tasks undid every staged change, so the commit would be empty (\`git commit --no-verify\` commits anyway)`,
+    );
+    code = 1;
   }
 
   if (hidden !== null) {
