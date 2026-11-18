@@ -12,6 +12,11 @@ updates:
     # In-range updates only touch the lockfile, so CI tests the latest
     # versions users get; package.json changes only when a range must grow.
     versioning-strategy: increase-if-necessary
+    ignore:
+      # typescript-eslint does not support TS 7 yet (typescript-eslint#10940).
+      # Drop this once it does.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: chore
       include: scope
