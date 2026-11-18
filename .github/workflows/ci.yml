@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   check:
+    # The release workflow runs the same jobs on this commit, from its tag.
+    if: "!(github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'chore: release v'))"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -33,6 +35,8 @@ jobs:
   # Bun is only the package manager here: tsdown, tsc and vitest run on the matrix Node.
   test-node:
     name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    # The release workflow runs the same jobs on this commit, from its tag.
+    if: "!(github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'chore: release v'))"
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +57,8 @@ jobs:
   # Running the full test suite on these runtimes is W23 / W81.
   test-runtime:
     name: smoke (${{ matrix.os }}, ${{ matrix.runtime }})
+    # The release workflow runs the same jobs on this commit, from its tag.
+    if: "!(github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'chore: release v'))"
     strategy:
       fail-fast: false
       matrix:
