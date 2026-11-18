@@ -2,6 +2,8 @@
 
 All notable changes to this project. `0.x` versions may break config and behavior (see [BACKLOG.md](./BACKLOG.md)).
 
+Full release notes, generated from the commit messages, are on [GitHub Releases](https://github.com/hexlabelposition/ward/releases).
+
 ## 0.2.0 - 2026-11-18
 
 Tasks on staged files: Ward replaces lint-staged.

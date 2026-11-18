@@ -71,8 +71,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      # Required to create the GitHub release.
-      contents: write
       # Required for npm trusted publishing and provenance.
       id-token: write
     steps:
@@ -98,12 +96,26 @@ jobs:
       - run: npm stage publish ./*.tgz --ignore-scripts --access public --tag "$DIST_TAG"
         env:
           DIST_TAG: ${{ steps.tag.outputs.dist-tag }}
-      - name: Create GitHub release
-        run: |
-          flags=()
-          if [ "$DIST_TAG" = next ]; then flags+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
-            --repo "$GITHUB_REPOSITORY" "${flags[@]}"
+
+  # Release notes from conventional commits since the previous tag. A separate
+  # job, so changelogithub never runs with the npm publishing permission.
+  release:
+    name: Create the GitHub release
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      # changelogithub marks X.Y.Z-beta.N tags as pre-releases itself.
+      - run: npx --yes changelogithub@15.0.5
         env:
-          DIST_TAG: ${{ steps.tag.outputs.dist-tag }}
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
