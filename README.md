@@ -1,16 +1,17 @@
 # ward
 
-> Git hooks from one config. No hook folder in your repo.
+> Git hooks and staged-file tasks from one config. No hook folder in your repo.
 
-`@hexlabelposition/ward` runs your git hooks from a single config file. Version 0.1 replaces **husky**; running tasks on staged files (the **lint-staged** part) comes in 0.2.
+`@hexlabelposition/ward` runs your git hooks from a single config file and runs tasks on the files of a commit or a push. It replaces **husky** and **lint-staged** with one tool.
 
 - **One config for all hooks** - `ward.config.ts` (typed, with autocomplete), `ward.yml`, or a `"ward"` section in `package.json`
 - **No `.husky/`-style folder** - hooks are generated locally into `.git/hooks`, only the config is committed
-- **Dynamic** - edit the config and the change applies on the next commit, no reinstall
+- **Tasks on staged files** - `eslint --fix {staged_files}`, with `glob` / `exclude` per task, fixes staged automatically
+- **Safe with partial staging** - unstaged changes are hidden while tasks run, and a failed run is reverted from a backup
 - **Careful with existing hooks** - a hook that is already there (git-lfs, a hand-written script) is never overwritten silently
 - **Clear config errors** - every problem is listed with its place in the config and a suggestion for typos
 
-> ⚠️ Status: early versions. `0.x` releases may change the config and behavior. See [What's next](#whats-next) for planned features.
+> ⚠️ Status: early versions. `0.x` releases may change the config and behavior. See [CHANGELOG.md](./CHANGELOG.md) for what changed and [BACKLOG.md](./BACKLOG.md) for what is planned.
 
 ## Install
 
@@ -22,15 +23,7 @@ npm pkg set scripts.prepare=ward
 npm run prepare
 ```
 
-The `prepare` script runs on every `npm install`, so hooks are set up for everyone on the team automatically:
-
-```json
-{
-  "scripts": {
-    "prepare": "ward"
-  }
-}
-```
+The `prepare` script runs on every `npm install`, so hooks are set up for everyone on the team automatically.
 
 Then add a config. The shortest one lives in `package.json`:
 
@@ -42,7 +35,7 @@ Then add a config. The shortest one lives in `package.json`:
   "ward": {
     "hooks": {
       "pre-commit": "npm run lint",
-      "commit-msg": "commitlint --edit {1}",
+      "commit-msg": "npx commitlint --edit {1}",
       "pre-push": ["npm run typecheck", "npm test"]
     }
   }
@@ -69,14 +62,19 @@ import { defineConfig } from "@hexlabelposition/ward";
 
 export default defineConfig({
   hooks: {
-    "pre-commit": ["npm run lint", "npm run format:check"],
-    "commit-msg": "commitlint --edit {1}",
-    "pre-push": {
+    "pre-commit": {
       tasks: {
-        typecheck: { run: "npm run typecheck" },
-        test: { run: "npm test" },
+        eslint: {
+          run: "npx eslint --fix {staged_files}",
+          glob: "*.{js,ts}",
+        },
+        prettier: {
+          run: "npx prettier --write --ignore-unknown {staged_files}",
+        },
       },
     },
+    "commit-msg": "npx commitlint --edit {1}",
+    "pre-push": ["npm run typecheck", "npm test"],
   },
 });
 ```
@@ -89,15 +87,16 @@ export default defineConfig({
 # ward.yml
 hooks:
   pre-commit:
-    - npm run lint
-    - npm run format:check
-  commit-msg: commitlint --edit {1}
-  pre-push:
     tasks:
-      typecheck:
-        run: npm run typecheck
-      test:
-        run: npm test
+      eslint:
+        run: npx eslint --fix {staged_files}
+        glob: "*.{js,ts}"
+      prettier:
+        run: npx prettier --write --ignore-unknown {staged_files}
+  commit-msg: npx commitlint --edit {1}
+  pre-push:
+    - npm run typecheck
+    - npm test
 ```
 
 ### Hook value forms
@@ -113,6 +112,7 @@ Any [git hook](https://git-scm.com/docs/githooks) can be used as a key: `pre-com
 ### How tasks run
 
 - Commands run through the system shell from the repo root, so `&&`, pipes and `npm run …` work as in a terminal.
+- `node_modules/.bin` is not added to `PATH`: call local tools with `npx` or through `npm run`.
 - Tasks run one after another. The first one that fails stops the hook, and git gets its exit code:
 
   ```text
@@ -130,13 +130,115 @@ Any [git hook](https://git-scm.com/docs/githooks) can be used as a key: `pre-com
 
 ```yaml
 hooks:
-  commit-msg: commitlint --edit {1}
+  commit-msg: npx commitlint --edit {1}
   prepare-commit-msg: node scripts/prefill-message.js {1} {2}
 ```
 
 Values are quoted for the shell when needed, so write `{1}`, not `"{1}"`. An argument git did not pass expands to nothing.
 
-### Config errors
+## Tasks on files
+
+### File placeholders
+
+| Placeholder      | Files                                                          |
+| ---------------- | -------------------------------------------------------------- |
+| `{staged_files}` | Files staged for the commit (added, copied, modified, renamed) |
+| `{push_files}`   | Files changed by the commits being pushed, `pre-push` only     |
+| `{all_files}`    | All tracked files                                              |
+
+Paths are relative to the repo root and quoted for the shell, so spaces and other special characters are safe. A task whose placeholders get no files is skipped, so `eslint {staged_files}` never runs on the whole project. A long list is split into several runs of the command, so it fits the command line limit on Windows.
+
+### `glob` and `exclude`
+
+```yaml
+hooks:
+  pre-commit:
+    tasks:
+      eslint:
+        run: npx eslint --fix {staged_files}
+        glob: ["*.ts", "*.tsx"]
+        exclude: "src/generated/**"
+```
+
+- A pattern without `/` matches the file name in any directory (`*.ts`), one with `/` matches the path from the repo root (`src/**/*.ts`), as in `.gitignore`.
+- `glob` and `exclude` take one pattern or a list.
+- A task with `glob` and no placeholder (`npx tsc --noEmit`) runs only when one of the hook's files matches: staged files in `pre-commit`, pushed files in `pre-push`.
+
+### Task options
+
+| Option       | Default | Meaning                                                                                              |
+| ------------ | ------- | ---------------------------------------------------------------------------------------------------- |
+| `run`        | -       | Command, or a function in `ward.config.ts`                                                           |
+| `glob`       | all     | Files the task runs on                                                                               |
+| `exclude`    | none    | Files to leave out even when `glob` matches them                                                     |
+| `symlinks`   | `false` | Pass symlinks to the task too. Off by default: a formatter would rewrite the file the link points to |
+| `stageFixed` | `true`  | `git add` the staged files the task changed, so a formatter's fixes go into the commit               |
+
+### Function tasks
+
+In `ward.config.ts`, `run` can be a function. It runs in Ward's process and gets the task's files (after `glob` / `exclude`) and the hook arguments. The task fails when the function throws or its promise rejects.
+
+```ts
+import { readFileSync } from "node:fs";
+import { defineConfig } from "@hexlabelposition/ward";
+
+export default defineConfig({
+  hooks: {
+    "pre-commit": {
+      tasks: {
+        "no-only": {
+          glob: "*.test.ts",
+          run({ files }) {
+            const bad = files.filter((file) =>
+              readFileSync(file, "utf8").includes(".only("),
+            );
+            if (bad.length > 0) {
+              throw new Error(`.only() left in ${bad.join(", ")}`);
+            }
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+`files` holds staged files in `pre-commit`, pushed files in `pre-push` and nothing in other hooks.
+
+### Parallel tasks
+
+```yaml
+hooks:
+  pre-push:
+    parallel: true
+    tasks:
+      typecheck:
+        run: npm run typecheck
+      test:
+        run: npm test
+```
+
+With `parallel: true` all tasks start at once and each runs to the end; the hook fails if any of them fails. Every line of output is prefixed with the task name. Don't run tasks that write the same files in parallel, such as ESLint `--fix` and Prettier.
+
+## Safety
+
+When a hook with tasks runs, Ward protects your working changes:
+
+1. **Backup.** Before the first task, the index and working tree are saved with `git stash create`. While the hook runs, the backup is also in `git stash list` as "ward backup", so a killed run can be restored by hand; it is kept there if the revert does not happen or fails.
+2. **Partial staging.** When tasks get staged files, the unstaged changes of partially staged files are hidden, so tasks see exactly what will be committed. They are put back after the tasks.
+3. **Revert.** When a task fails, or the unstaged changes conflict with a task's fixes, the index and working tree go back to the backup.
+4. **Empty commit.** If the tasks undo every staged change in `pre-commit` (a formatter reverts a whitespace-only change), the hook fails instead of making an empty commit.
+
+Untracked files are not touched. Binary files, renames, deletions and symlinks are handled.
+
+| Hook option | Flag          | Meaning                                                                |
+| ----------- | ------------- | ---------------------------------------------------------------------- |
+| `backup`    | `--no-backup` | `false` skips the backup to save time in large repos; no revert then   |
+| `revert`    | `--no-revert` | `false` keeps the changes of the tasks after a failure, for inspection |
+
+The flags are for `ward run`, right after the hook name: `ward run pre-commit --no-revert`.
+
+## Config errors
 
 The whole config is checked on every run, and every problem is reported at once:
 
@@ -147,7 +249,7 @@ ward: ward.yml is invalid:
   hooks.pre-push[1]: command is empty
 ```
 
-An invalid config fails every hook, not only the broken one: a typo in a hook name would otherwise never be noticed.
+An invalid config fails every hook, not only the broken one: a typo in a hook name would otherwise never be noticed. Options planned for later versions are rejected with "not supported yet" instead of being silently ignored.
 
 ## CLI
 
@@ -165,6 +267,8 @@ An invalid config fails every hook, not only the broken one: a typo in a hook na
 | `--force`              | Replace existing hooks; the old ones are lost                  |
 | `--respect-hooks-path` | Install into the `core.hooksPath` directory instead of failing |
 | `--bin <path>`         | Binary the hooks call instead of `node_modules/.bin/ward`      |
+
+`ward run` flags: `--no-backup`, `--no-revert` (see [Safety](#safety)).
 
 `ward` does nothing in CI (when `CI` is set), outside a git repository and when git is not installed, so `npm install` in Docker or CI does not fail.
 
@@ -224,23 +328,50 @@ If dependencies are not installed yet (`node_modules/.bin/ward` is missing), the
 
    Each teammate needs the `git config --unset` once in their clone; Ward prints this command when it finds the setting.
 
+## Moving from lint-staged
+
+Each lint-staged entry becomes a task with `glob` and `{staged_files}`. This lint-staged config:
+
+```json
+{
+  "lint-staged": {
+    "*.{js,ts}": "eslint --fix",
+    "*": "prettier --write --ignore-unknown"
+  }
+}
+```
+
+becomes:
+
+```yaml
+# ward.yml
+hooks:
+  pre-commit:
+    tasks:
+      eslint:
+        run: npx eslint --fix {staged_files}
+        glob: "*.{js,ts}"
+      prettier:
+        run: npx prettier --write --ignore-unknown {staged_files}
+```
+
+Then remove `lint-staged` and the `npx lint-staged` call from the `pre-commit` hook. Differences to keep in mind:
+
+- Ward does not append the files to the command: write `{staged_files}` where they go.
+- Tasks run one after another unless the hook sets `parallel: true`; lint-staged runs different globs in parallel.
+- Fixed files are staged by default, as in lint-staged; `stageFixed: false` turns it off per task.
+
 ## How it works
 
-`ward` writes a small stub for every git hook into `.git/hooks`. Each stub only calls `ward run <hook>`. The config is read at run time, so changes apply on the next git command. A hook with no tasks exits right away, before anything else is loaded.
+`ward` writes a small stub for every git hook into `.git/hooks`. Each stub only calls `ward run <hook>`. The config is read at run time, so changes apply on the next git command, with no reinstall. A hook with no tasks exits right away, before anything else is loaded.
 
 `.git/hooks` is not committed, so each clone generates its own stubs through `prepare`. The hooks directory is resolved by git itself, so worktrees and submodules work.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for details.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the design and the details of each part.
 
-## What's next
+## Roadmap
 
-Planned, not available yet (see [BACKLOG.md](./BACKLOG.md)):
-
-- **0.2 - replace lint-staged**: tasks on staged files with `glob` and `{staged_files}`, safe partial staging with backup, parallel tasks
-- **0.3**: Bun and Deno
-- Later: `ward init`, CI mode, presets and shared configs, monorepo support, migration from husky + lint-staged and lefthook
-
-Options from these versions (`glob`, `parallel`, …) are rejected today with "not supported yet" instead of being silently ignored.
+Planned versions and items are in [BACKLOG.md](./BACKLOG.md), released changes in [CHANGELOG.md](./CHANGELOG.md).
 
 ## License
 
