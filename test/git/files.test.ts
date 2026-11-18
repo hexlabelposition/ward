@@ -6,6 +6,7 @@ import {
   getPushFiles,
   getStagedFiles,
   type GitFile,
+  hasStagedChanges,
   parsePushInput,
   type PushUpdate,
 } from "../../src/git/files.ts";
@@ -153,6 +154,37 @@ describe("getStagedFiles", () => {
     repo.git("add", "--all");
 
     expect(staged(repo)).toEqual(["a\nb.txt"]);
+  });
+});
+
+describe("hasStagedChanges", () => {
+  it("tells whether the index differs from HEAD", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "a.ts": "a\n", "b.ts": "b\n" });
+    const git = { cwd: repo.dir, env: repo.env };
+    // Unstaged changes don't count.
+    repo.write("a.ts", "a2\n");
+    expect(hasStagedChanges(git)).toBe(false);
+
+    repo.git("add", "a.ts");
+    expect(hasStagedChanges(git)).toBe(true);
+
+    repo.write("a.ts", "a\n");
+    repo.git("add", "a.ts");
+    expect(hasStagedChanges(git)).toBe(false);
+
+    repo.git("rm", "--quiet", "b.ts");
+    expect(hasStagedChanges(git)).toBe(true);
+  });
+
+  it("compares with an empty tree before the first commit", () => {
+    using repo = createTempRepo();
+    const git = { cwd: repo.dir, env: repo.env };
+    expect(hasStagedChanges(git)).toBe(false);
+
+    repo.write("a.ts", "a\n");
+    repo.git("add", "a.ts");
+    expect(hasStagedChanges(git)).toBe(true);
   });
 });
 

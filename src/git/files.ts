@@ -1,4 +1,4 @@
-import { git, type GitOptions } from "./exec.ts";
+import { git, GitError, type GitOptions } from "./exec.ts";
 
 /** A file from one of the lists below. */
 export type GitFile = {
@@ -40,6 +40,22 @@ export function getStagedFiles(options: GitOptions = {}): GitFile[] {
     if (path !== undefined) files.push(...toFile(mode, path));
   }
   return files;
+}
+
+/**
+ * Whether the index differs from `HEAD`: what `git commit` would commit
+ * without `--allow-empty`. Deletions and submodule changes count too. Before
+ * the first commit, the index is compared with an empty tree.
+ */
+export function hasStagedChanges(options: GitOptions = {}): boolean {
+  try {
+    git(["diff", "--cached", "--quiet", "--no-ext-diff"], options);
+    return false;
+  } catch (error) {
+    // `--quiet` exits 1 when there are changes.
+    if (error instanceof GitError && error.status === 1) return true;
+    throw error;
+  }
 }
 
 /**
