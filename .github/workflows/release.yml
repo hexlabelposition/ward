@@ -97,8 +97,10 @@ jobs:
         env:
           DIST_TAG: ${{ steps.tag.outputs.dist-tag }}
 
-  # Release notes from conventional commits since the previous tag. A separate
-  # job, so changelogithub never runs with the npm publishing permission.
+  # A draft release with the conventional commits since the previous tag: the
+  # notes are rewritten by hand in the release style (CLAUDE.md), then
+  # published. A separate job, so changelogithub never runs with the npm
+  # publishing permission.
   release:
     name: Create the GitHub release
     needs: publish
@@ -116,6 +118,6 @@ jobs:
           node-version: 24
           package-manager-cache: false
       # changelogithub marks X.Y.Z-beta.N tags as pre-releases itself.
-      - run: npx --yes changelogithub@15.0.5
+      - run: npx --yes changelogithub@15.0.5 --draft
         env:
           GITHUB_TOKEN: ${{ github.token }}

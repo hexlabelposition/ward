@@ -21,10 +21,24 @@ CI runs the suite on all three runtimes on Ubuntu, macOS and Windows. Run all th
 - Backlog items: implement one `Wn` at a time, tick it in BACKLOG.md in the same commit, and put the number in the subject: `feat(hooks): ... (W22)`. Numbers are never reused (see BACKLOG.md).
 - Commits: Conventional Commits, scope = `src/` folder or area (`cli`, `hooks`, `config`, `runtime`, `github`), lowercase imperative subject.
 - No history rewrites: fix a pushed commit with a new commit.
-- When behavior changes, update README.md and ARCHITECTURE.md in the same change. Release notes come from commit messages (GitHub Releases), there is no CHANGELOG.md.
+- When behavior changes, update README.md and ARCHITECTURE.md in the same change. There is no CHANGELOG.md: changes are described in GitHub Releases.
 - Docs and code comments are in English; docs use a spaced hyphen, not em dashes.
 - Runtime dependencies stay at `yaml` and `picomatch`; everything else is Node built-ins that Bun and Deno implement.
 - Runtime-specific code lives in `src/runtime/`. CLI commands are imported lazily to keep the no-op hook path fast.
+
+## Releases
+
+`bun run release` (bumpp) bumps the version, commits `chore: release vX.Y.Z`, tags and pushes. The tag runs `.github/workflows/release.yml`: CI, build, `npm stage publish` (approve it on npmjs.com or with `npm stage approve`), then a **draft** GitHub release listing the commits.
+
+Rewrite the draft in the style of v0.1.0 and v0.2.0, then publish it:
+
+1. One sentence: the goal of the version, then the 0.x warning (`> [!WARNING]`).
+2. `## Install`: the commands, provenance, Node / runtime requirements, runtime dependencies.
+3. `## What's in vX.Y`: user-facing changes grouped under bold headings, one line each.
+4. `## Moving from <tool>` when the version replaces one, with a link to the README section.
+5. `## Tested on`: the CI matrix.
+6. `## What's next`: the next one or two versions from BACKLOG.md.
+7. `**Full Changelog**: https://github.com/hexlabelposition/ward/compare/vPREV...vX.Y.Z`
 
 ## Gotchas
 
