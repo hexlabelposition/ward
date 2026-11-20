@@ -206,7 +206,9 @@ type Task = {
 | `{staged_files}` | `git diff --cached --name-only -z --diff-filter=ACMR`                                                                                                    |
 | `{push_files}`   | files changed by the pushed commits (`pre-push` stdin): `git log <local> --not <remote sha> --remotes=<remote>`, minus files gone from the pushed commit |
 | `{all_files}`    | `git ls-files -z`                                                                                                                                        |
-| `--from-ref`     | `git diff --name-only -z <ref>...HEAD`                                                                                                                   |
+| `--from-ref`     | `git diff --raw -z --diff-filter=ACMR <ref>...HEAD`: files changed on the branch since it forked from `<ref>`                                            |
+
+`--from-ref <ref>` is not a placeholder: it replaces the staged and pushed files for the whole run, so `{staged_files}`, `{push_files}` and `glob`-only tasks get the branch's files and the same config runs in CI. `{all_files}` stays as it is. Nothing is staged in that mode: fixes are not `git add`ed, no unstaged changes are hidden, the empty-commit check is off and `pre-push` stdin is not read (CI has none). The backup and revert work as usual. `ward run` checks the ref first (`rev-parse --verify`, `merge-base`) and fails with a hint about `fetch-depth`, since a shallow clone or a missing base branch is the usual cause.
 
 Placeholders expand in one pass, so a file named `{1}.ts` is not expanded again. Each source is read from git once per run, when a task first uses it. `{push_files}` is only valid in `pre-push`: Ward reads the refs from stdin before the first task and gives every task a copy on its stdin.
 

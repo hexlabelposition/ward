@@ -15,10 +15,15 @@ export type RunOptions = {
   backup?: boolean;
   /** `false` (`--no-revert`): keep task changes when the hook fails. */
   revert?: boolean;
+  /**
+   * `--from-ref <ref>`: the hook's files are those changed on the branch
+   * since it forked from `ref`, instead of the staged or pushed files.
+   */
+  fromRef?: string;
 };
 
 /** Flags of `ward run` itself, given right after the hook name. */
-const RUN_FLAGS = ["--no-backup", "--no-revert"] as const;
+const RUN_FLAGS = ["--no-backup", "--no-revert", "--from-ref"] as const;
 
 /**
  * Split `ward run` arguments into the hook, Ward's own flags and the hook
@@ -30,23 +35,44 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
   const [hook, ...rest] = argv;
   let backup = true;
   let revert = true;
+  let fromRef: string | undefined;
   let i = 0;
   for (; i < rest.length; i++) {
-    const arg = rest[i];
+    const arg = rest[i] ?? "";
     if (arg === "--") {
       i++;
       break;
     }
-    if (!(RUN_FLAGS as readonly (string | undefined)[]).includes(arg)) break;
-    if (arg === "--no-backup") backup = false;
-    if (arg === "--no-revert") revert = false;
+    const [flag, inline] = splitFromRef(arg);
+    if (!(RUN_FLAGS as readonly string[]).includes(flag)) break;
+    if (flag === "--no-backup") backup = false;
+    if (flag === "--no-revert") revert = false;
+    if (flag === "--from-ref") {
+      const value = inline ?? rest[++i];
+      // A value starting with `-` would reach git as an option.
+      if (!value || value.startsWith("-")) {
+        throw new Error(
+          "--from-ref needs a ref, e.g. `ward run pre-commit --from-ref origin/main`",
+        );
+      }
+      fromRef = value;
+    }
   }
   return {
     hook,
     args: rest.slice(i),
     ...(!backup && { backup }),
     ...(!revert && { revert }),
+    ...(fromRef !== undefined && { fromRef }),
   };
+}
+
+/** `--from-ref=main` → `["--from-ref", "main"]`; other args as they are. */
+function splitFromRef(arg: string): [string, string?] {
+  const prefix = "--from-ref=";
+  return arg.startsWith(prefix)
+    ? ["--from-ref", arg.slice(prefix.length)]
+    : [arg];
 }
 
 /**
@@ -59,7 +85,8 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
  * The index and working tree are backed up before the tasks unless the hook
  * sets `backup: false` or `--no-backup` is given, and the hook goes back to
  * the backup when it fails unless it sets `revert: false` or `--no-revert`
- * is given.
+ * is given. `--from-ref <ref>` runs the tasks on the files changed since
+ * `ref` instead of the staged or pushed ones (`runHook`).
  */
 export async function run({
   hook,
@@ -68,6 +95,7 @@ export async function run({
   env = process.env,
   backup = true,
   revert = true,
+  fromRef,
 }: RunOptions): Promise<number> {
   if (hook === undefined) {
     console.error("ward run: missing hook name, e.g. `ward run pre-commit`");
@@ -98,6 +126,16 @@ export async function run({
   // changes: checking them again would only get in the way.
   if (getGitOperation(paths.gitDir) !== null) return 0;
 
+  // Checked before the config: a ref missing in CI is the likely mistake.
+  if (fromRef !== undefined) {
+    const { checkFromRef } = await import("../git/files.ts");
+    const problem = checkFromRef(fromRef, { cwd: paths.root, env });
+    if (problem !== null) {
+      console.error(`ward: ${problem}`);
+      return 1;
+    }
+  }
+
   const config = await readConfig(paths.root);
   const tasks = config?.hooks[hook]?.tasks ?? [];
   if (tasks.length === 0) return 0;
@@ -116,5 +154,6 @@ export async function run({
     parallel,
     backup: withBackup,
     revert: withRevert,
+    ...(fromRef !== undefined && { fromRef }),
   });
 }

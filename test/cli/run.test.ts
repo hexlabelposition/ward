@@ -1206,6 +1206,107 @@ describe("ward run empty commit", () => {
   });
 });
 
+describe("ward run --from-ref", () => {
+  /** `main` with a.txt, `feature` with b.txt and c.ts checked out; nothing staged. */
+  function featureRepo() {
+    const repo = createTempRepo();
+    repo.commit("base", { "a.txt": "a\n" });
+    repo.git("switch", "--quiet", "-c", "feature");
+    repo.commit("feature", { "b.txt": "b\n", "c.ts": "c\n" });
+    return repo;
+  }
+
+  it("gives {staged_files} the files changed since the ref", () => {
+    using repo = featureRepo();
+    writeHook(repo, `${node(PRINT_ARGS)} {staged_files}`);
+
+    const { status, stdout } = ward(repo, [
+      "run",
+      "pre-commit",
+      "--from-ref",
+      "main",
+    ]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("b.txt|c.ts\n");
+  });
+
+  it("matches glob-only tasks against the files changed since the ref", () => {
+    using repo = featureRepo();
+    writeHook(repo, {
+      tasks: {
+        ts: { run: node("console.log('ts')"), glob: "*.ts" },
+        md: { run: node("console.log('md')"), glob: "*.md" },
+      },
+    });
+
+    const { status, stdout } = ward(repo, [
+      "run",
+      "pre-commit",
+      "--from-ref=main",
+    ]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("ts\n");
+  });
+
+  it("leaves fixes unstaged", () => {
+    using repo = featureRepo();
+    writeHook(repo, `${format()} {staged_files}`);
+
+    const { status } = ward(repo, ["run", "pre-commit", "--from-ref", "main"]);
+
+    expect(status).toBe(0);
+    expect(readFileSync(join(repo.dir, "b.txt"), "utf8")).toBe("B\n");
+    expect(repo.git("diff", "--cached", "--name-only")).toBe("");
+    expect(repo.git("diff", "--name-only")).toBe("b.txt\nc.ts");
+  });
+
+  it("gives {push_files} the files changed since the ref, without stdin", () => {
+    using repo = featureRepo();
+    repo.write(
+      "ward.yml",
+      `hooks:\n  pre-push: ${JSON.stringify(`${node(PRINT_ARGS)} {push_files}`)}\n`,
+    );
+
+    const { status, stdout } = ward(repo, [
+      "run",
+      "pre-push",
+      "--from-ref",
+      "main",
+    ]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("b.txt|c.ts\n");
+  });
+
+  it("fails with a hint for an unknown ref", () => {
+    using repo = featureRepo();
+    writeHook(repo, `${node(PRINT_ARGS)} {staged_files}`);
+
+    const { status, stdout, stderr } = ward(repo, [
+      "run",
+      "pre-commit",
+      "--from-ref",
+      "origin/main",
+    ]);
+
+    expect(status).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("ward: --from-ref origin/main: no such commit");
+    expect(stderr).toContain("fetch-depth: 0");
+  });
+
+  it("fails when --from-ref has no ref", () => {
+    using repo = featureRepo();
+
+    const { status, stderr } = ward(repo, ["run", "pre-commit", "--from-ref"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("ward: --from-ref needs a ref");
+  });
+});
+
 describe("parseRunArgs", () => {
   it("reads Ward's flags right after the hook name", () => {
     expect(parseRunArgs(["pre-commit", "--no-backup", "a", "b"])).toEqual({
@@ -1241,6 +1342,38 @@ describe("parseRunArgs", () => {
 
   it("leaves the hook undefined without arguments", () => {
     expect(parseRunArgs([])).toEqual({ hook: undefined, args: [] });
+  });
+
+  it("reads --from-ref with the ref as the next or an inline value", () => {
+    expect(
+      parseRunArgs(["pre-commit", "--from-ref", "origin/main", "--no-backup"]),
+    ).toEqual({
+      hook: "pre-commit",
+      args: [],
+      backup: false,
+      fromRef: "origin/main",
+    });
+    expect(parseRunArgs(["pre-commit", "--from-ref=main"])).toEqual({
+      hook: "pre-commit",
+      args: [],
+      fromRef: "main",
+    });
+  });
+
+  it.each([
+    [["pre-commit", "--from-ref"]],
+    [["pre-commit", "--from-ref="]],
+    [["pre-commit", "--from-ref", "--no-backup"]],
+    [["pre-commit", "--from-ref=-x"]],
+  ])("rejects --from-ref without a ref: %j", (argv) => {
+    expect(() => parseRunArgs(argv)).toThrow("--from-ref needs a ref");
+  });
+
+  it("passes --from-ref after the hook args to the hook", () => {
+    expect(parseRunArgs(["commit-msg", "msg", "--from-ref", "main"])).toEqual({
+      hook: "commit-msg",
+      args: ["msg", "--from-ref", "main"],
+    });
   });
 });
 

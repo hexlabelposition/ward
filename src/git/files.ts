@@ -25,12 +25,58 @@ const GITLINK = "160000";
  * Works before the first commit: the index is compared with an empty tree.
  */
 export function getStagedFiles(options: GitOptions = {}): GitFile[] {
-  const out = git(
-    ["diff", "--cached", "--raw", "-z", "--diff-filter=ACMR"],
-    options,
+  return parseRawDiff(
+    git(["diff", "--cached", "--raw", "-z", "--diff-filter=ACMR"], options),
   );
-  // `:<old mode> <new mode> <old sha> <new sha> <status>` NUL `<path>` NUL,
-  // with a second path (the new one) for renames and copies.
+}
+
+/**
+ * Files changed on the current branch since it forked from `ref` (`--from-ref`):
+ * `git diff <ref>...HEAD`, so commits `ref` got after the fork don't count.
+ * Same rules as `getStagedFiles`: added, copied, modified or renamed files
+ * as they are in `HEAD`, no submodules. Uncommitted changes are not part of
+ * the diff. Check `ref` first with `checkFromRef`.
+ */
+export function getRefFiles(ref: string, options: GitOptions = {}): GitFile[] {
+  return parseRawDiff(
+    git(
+      ["diff", "--raw", "-z", "--diff-filter=ACMR", `${ref}...HEAD`, "--"],
+      options,
+    ),
+  );
+}
+
+/**
+ * Why `ref` can't be used with `--from-ref`, or `null` when it can: it must
+ * name a commit that shares history with `HEAD`. In CI both usually mean the
+ * clone is shallow or the base branch was not fetched.
+ */
+export function checkFromRef(
+  ref: string,
+  options: GitOptions = {},
+): string | null {
+  const fetch = "fetch it first (actions/checkout: `fetch-depth: 0`)";
+  try {
+    git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], options);
+  } catch (error) {
+    if (!(error instanceof GitError)) throw error;
+    return `--from-ref ${ref}: no such commit; in CI, ${fetch}`;
+  }
+  try {
+    git(["merge-base", ref, "HEAD"], options);
+  } catch (error) {
+    if (!(error instanceof GitError)) throw error;
+    return `--from-ref ${ref}: no common history with HEAD; in a shallow clone, ${fetch}`;
+  }
+  return null;
+}
+
+/**
+ * `git diff --raw -z` output: `:<old mode> <new mode> <old sha> <new sha>
+ * <status>` NUL `<path>` NUL, with a second path (the new one) for renames
+ * and copies. `symlink` is the new mode.
+ */
+function parseRawDiff(out: string): GitFile[] {
   const files: GitFile[] = [];
   const fields = splitNul(out);
   for (let i = 0; i < fields.length; i++) {

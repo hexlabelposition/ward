@@ -2,6 +2,7 @@ import type { Hook, Task } from "../config/schema.ts";
 import {
   getAllFiles,
   getPushFiles,
+  getRefFiles,
   getStagedFiles,
   type GitFile,
   hasStagedChanges,
@@ -47,6 +48,11 @@ export type RunHookOptions = {
   backup?: boolean;
   /** Go back to the backup when the hook fails. On by default. */
   revert?: boolean;
+  /**
+   * `--from-ref`: staged and pushed files are replaced by the files changed
+   * since this ref (`getRefFiles`), checked beforehand with `checkFromRef`.
+   */
+  fromRef?: string;
 };
 
 /**
@@ -103,6 +109,12 @@ export type RunHookOptions = {
  * Without a revert (no backup, or `revert: false`), task changes stay; hidden
  * unstaged changes are put back on top of them, and a conflict leaves
  * conflict markers in the files.
+ *
+ * With `fromRef`, `{staged_files}`, `{push_files}` and the hook's files of
+ * `glob`-only tasks are the files changed since that ref, so the same config
+ * runs in CI. Nothing is staged there: fixes are not `git add`ed, no
+ * unstaged changes are hidden, the empty-commit check is off and `pre-push`
+ * stdin is not read. The backup and revert work as usual.
  */
 export async function runHook({
   hook,
@@ -114,18 +126,24 @@ export async function runHook({
   readStdin = readProcessStdin,
   backup = true,
   revert = true,
+  fromRef,
 }: RunHookOptions): Promise<number> {
   const sources = new Set(tasks.flatMap((task) => taskSources(task, hook)));
   // Read before the first task: a task could otherwise consume it. Parallel
-  // tasks can't share it either, so each gets a copy.
-  const input = sources.has("push") || parallel ? await readStdin() : undefined;
+  // tasks can't share it either, so each gets a copy. With `fromRef` the
+  // push refs are not needed, and in CI there is no stdin to wait for.
+  const needsRefs = sources.has("push") && fromRef === undefined;
+  const input = needsRefs || parallel ? await readStdin() : undefined;
 
   const git: GitOptions = { cwd: root, env };
   const cache = new Map<FileSource, readonly GitFile[]>();
   const filesOf = (source: FileSource): readonly GitFile[] => {
     let files = cache.get(source);
     if (files === undefined) {
-      files = listFiles(source, git, args, input ?? "");
+      files =
+        fromRef !== undefined && source !== "all"
+          ? getRefFiles(fromRef, git)
+          : listFiles(source, git, args, input ?? "");
       cache.set(source, files);
     }
     return files;
@@ -152,8 +170,11 @@ export async function runHook({
       return null;
     }
 
+    // With `fromRef`, "staged" files are the ref's: nothing to `git add`.
     const before: Snapshot | undefined =
-      task.stageFixed !== false && files.staged !== undefined
+      task.stageFixed !== false &&
+      files.staged !== undefined &&
+      fromRef === undefined
         ? snapshotFiles(root, files.staged)
         : undefined;
 
@@ -217,7 +238,8 @@ export async function runHook({
   };
 
   // Read before anything else touches the index.
-  const stagedBefore = hook === "pre-commit" && hasStagedChanges(git);
+  const stagedBefore =
+    hook === "pre-commit" && fromRef === undefined && hasStagedChanges(git);
   const hash = backup ? createBackup(git) : null;
   // Without a backup there is nothing to revert to.
   const reverting = hash !== null && revert;
@@ -227,12 +249,13 @@ export async function runHook({
     );
   };
   // Tasks that get staged files see only what is committed.
-  const hidden = sources.has("staged")
-    ? hideUnstagedChanges(
-        filesOf("staged").map((file) => file.path),
-        git,
-      )
-    : null;
+  const hidden =
+    sources.has("staged") && fromRef === undefined
+      ? hideUnstagedChanges(
+          filesOf("staged").map((file) => file.path),
+          git,
+        )
+      : null;
 
   let code: number;
   try {

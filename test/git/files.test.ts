@@ -2,8 +2,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  checkFromRef,
   getAllFiles,
   getPushFiles,
+  getRefFiles,
   getStagedFiles,
   type GitFile,
   hasStagedChanges,
@@ -28,6 +30,16 @@ function all(repo: TempRepo, cwd = repo.dir) {
 
 function pushed(repo: TempRepo, updates: PushUpdate[], remote = "origin") {
   return paths(getPushFiles(updates, remote, { cwd: repo.dir, env: repo.env }));
+}
+
+function fromRef(repo: TempRepo, ref: string) {
+  return paths(getRefFiles(ref, { cwd: repo.dir, env: repo.env }));
+}
+
+/** `main` with a commit, and `feature` forked from it and checked out. */
+function featureBranch(repo: TempRepo) {
+  repo.commit("base", { "a.txt": "a\n", "old.txt": "o\n", "gone.txt": "g\n" });
+  repo.git("switch", "--quiet", "-c", "feature");
 }
 
 /** Symlinks only, from the lists above. */
@@ -380,6 +392,90 @@ describe("getPushFiles", () => {
   });
 });
 
+describe("getRefFiles", () => {
+  it("lists files changed on the branch, not on the base after the fork", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+    repo.commit("feature", { "a.txt": "changed\n", "b.txt": "b\n" });
+    repo.git("switch", "--quiet", "main");
+    repo.commit("main moves on", { "c.txt": "c\n" });
+    repo.git("switch", "--quiet", "feature");
+
+    expect(fromRef(repo, "main")).toEqual(["a.txt", "b.txt"]);
+  });
+
+  it("leaves out deleted files and lists renamed ones under the new path", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+    repo.git("rm", "--quiet", "gone.txt");
+    repo.git("mv", "old.txt", "new.txt");
+    repo.git("commit", "--quiet", "--no-verify", "-m", "move");
+
+    expect(fromRef(repo, "main")).toEqual(["new.txt"]);
+  });
+
+  it("leaves out uncommitted changes", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+    repo.commit("feature", { "b.txt": "b\n" });
+    repo.write("staged.txt", "s\n");
+    repo.git("add", "staged.txt");
+    repo.write("a.txt", "unstaged\n");
+
+    expect(fromRef(repo, "main")).toEqual(["b.txt"]);
+  });
+
+  it("returns paths relative to the repo root from a subdirectory", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+    repo.commit("feature", { "src/b.txt": "b\n" });
+
+    const files = getRefFiles("main", {
+      cwd: join(repo.dir, "src"),
+      env: repo.env,
+    });
+    expect(paths(files)).toEqual(["src/b.txt"]);
+  });
+
+  it("returns nothing when the branch has no changes", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+
+    expect(fromRef(repo, "main")).toEqual([]);
+  });
+});
+
+describe("checkFromRef", () => {
+  it("accepts a ref that shares history with HEAD", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+    repo.commit("feature", { "b.txt": "b\n" });
+
+    expect(checkFromRef("main", { cwd: repo.dir, env: repo.env })).toBeNull();
+    expect(checkFromRef("HEAD~1", { cwd: repo.dir, env: repo.env })).toBeNull();
+  });
+
+  it("explains an unknown ref", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+
+    expect(checkFromRef("origin/main", { cwd: repo.dir, env: repo.env })).toBe(
+      "--from-ref origin/main: no such commit; in CI, fetch it first (actions/checkout: `fetch-depth: 0`)",
+    );
+  });
+
+  it("explains a ref without common history", () => {
+    using repo = createTempRepo();
+    featureBranch(repo);
+    repo.git("switch", "--quiet", "--orphan", "other");
+    repo.commit("unrelated", { "x.txt": "x\n" });
+
+    expect(checkFromRef("main", { cwd: repo.dir, env: repo.env })).toBe(
+      "--from-ref main: no common history with HEAD; in a shallow clone, fetch it first (actions/checkout: `fetch-depth: 0`)",
+    );
+  });
+});
+
 describe("symlinks and submodules", () => {
   it("marks staged symlinks and leaves out submodules", () => {
     using repo = createTempRepo();
@@ -418,6 +514,20 @@ describe("symlinks and submodules", () => {
       cwd: repo.dir,
       env: repo.env,
     });
+    expect(paths(files)).toEqual(["a.txt", "link"]);
+    expect(symlinks(files)).toEqual(["link"]);
+  });
+
+  it("marks symlinks changed since a ref and leaves out submodules", () => {
+    using repo = createTempRepo();
+    repo.commit("init", { "target.txt": "t\n" });
+    repo.git("switch", "--quiet", "-c", "feature");
+    stageSymlinkAndSubmodule(repo);
+    repo.write("a.txt", "a\n");
+    repo.git("add", "a.txt");
+    repo.git("commit", "--quiet", "--no-verify", "-m", "links");
+
+    const files = getRefFiles("main", { cwd: repo.dir, env: repo.env });
     expect(paths(files)).toEqual(["a.txt", "link"]);
     expect(symlinks(files)).toEqual(["link"]);
   });

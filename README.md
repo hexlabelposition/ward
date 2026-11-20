@@ -287,7 +287,15 @@ An invalid config fails every hook, not only the broken one: a typo in a hook na
 | `--respect-hooks-path` | Install into the `core.hooksPath` directory instead of failing |
 | `--bin <path>`         | Binary the hooks call instead of `node_modules/.bin/ward`      |
 
-`ward run` flags: `--no-backup`, `--no-revert` (see [Safety](#safety)).
+`ward run` flags, given right after the hook name:
+
+| Flag               | Meaning                                                                     |
+| ------------------ | --------------------------------------------------------------------------- |
+| `--no-backup`      | Skip the backup before the run (see [Safety](#safety))                      |
+| `--no-revert`      | Keep the changes of the tasks when the hook fails                           |
+| `--from-ref <ref>` | Run on the files changed since `<ref>` instead of the staged or pushed ones |
+
+`--from-ref` runs the same config on a branch, for example in a pull request pipeline: `ward run pre-commit --from-ref origin/main`. `{staged_files}`, `{push_files}` and `glob`-only tasks get the files the branch changed since it forked from `<ref>`; uncommitted changes are not included, and fixes are not staged. The ref and the history down to the fork must be in the clone: with `actions/checkout`, set `fetch-depth: 0`.
 
 `ward` does nothing in CI (when `CI` is set), outside a git repository and when git is not installed, so `npm install` in Docker or CI does not fail.
 
