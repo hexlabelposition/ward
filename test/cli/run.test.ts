@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -8,12 +7,11 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseRunArgs } from "../../src/cli/run.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
-
-const CLI = resolve(import.meta.dirname, "../../src/cli/index.ts");
+import { CLI, writeWardBin } from "../helpers/ward-bin.ts";
 
 function ward(
   repo: TempRepo,
@@ -1235,12 +1233,7 @@ describe("parseRunArgs", () => {
 
 /** Install the stubs, with `node_modules/.bin/ward` pointing at the source CLI. */
 function installStubs(repo: TempRepo) {
-  const bin = join(repo.dir, "node_modules/.bin/ward");
-  repo.write(
-    "node_modules/.bin/ward",
-    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"\n`,
-  );
-  chmodSync(bin, 0o755);
+  writeWardBin(repo);
   expect(ward(repo, []).status).toBe(0);
 }
 

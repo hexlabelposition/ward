@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, delimiter, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
@@ -10,8 +11,28 @@ const LOADER = pathToFileURL(
 
 type Runtime = "node" | "bun";
 
+/**
+ * Node from PATH when the tests run on Bun. `bun --bun` puts a `node` that is
+ * Bun itself first in PATH (`/tmp/bun-node-*`), so skip that one.
+ */
+function findNode(): string | undefined {
+  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+    if (basename(dir).startsWith("bun-node-")) continue;
+    for (const name of ["node", "node.exe"]) {
+      const file = join(dir, name);
+      if (existsSync(file) && !basename(realpathSync(file)).startsWith("bun")) {
+        return file;
+      }
+    }
+  }
+  return undefined;
+}
+
+const nodePath =
+  process.versions.bun === undefined ? process.execPath : findNode();
+
 const RUNTIMES: Record<Runtime, { cmd: string; args: string[] }> = {
-  node: { cmd: process.execPath, args: ["--input-type=module", "-e"] },
+  node: { cmd: nodePath ?? "node", args: ["--input-type=module", "-e"] },
   bun: { cmd: "bun", args: ["-e"] },
 };
 
@@ -45,7 +66,13 @@ function load(repo: TempRepo, runtime: Runtime, file = "ward.config.ts") {
   };
 }
 
-const runtimes: Runtime[] = hasBun ? ["node", "bun"] : ["node"];
+/** Node is optional when the tests run on Bun. */
+const hasNode = nodePath !== undefined;
+
+const runtimes: Runtime[] = [
+  ...(hasNode ? (["node"] as const) : []),
+  ...(hasBun ? (["bun"] as const) : []),
+];
 
 describe.each(runtimes)("loadTsConfig on %s", (runtime) => {
   it("returns the default export", () => {
@@ -114,7 +141,7 @@ export default hooks;
   });
 });
 
-describe("loadTsConfig on node only", () => {
+describe.skipIf(!hasNode)("loadTsConfig on node only", () => {
   it("explains syntax Node can't strip", () => {
     using repo = createTempRepo();
     repo.write("ward.config.ts", "export default {};\nenum A { B }\n");

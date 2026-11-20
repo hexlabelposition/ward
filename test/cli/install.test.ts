@@ -4,8 +4,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HOOKS } from "../../src/hooks/list.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
-
-const CLI = resolve(import.meta.dirname, "../../src/cli/index.ts");
+import { CLI, writeWardBin } from "../helpers/ward-bin.ts";
 
 /** Bun is optional locally; CI installs it for every test job. */
 const hasBun = spawnSync("bun", ["--version"]).status === 0;
@@ -371,12 +370,7 @@ describe("ward (install no-op)", () => {
 describe("installed hooks", () => {
   it("run ward and let git commit", () => {
     using repo = createTempRepo();
-    // What npm puts in node_modules/.bin, pointing at the source CLI.
-    repo.write(
-      "node_modules/.bin/ward",
-      `#!/bin/sh\nexec "${process.execPath.replaceAll("\\", "/")}" "${CLI.replaceAll("\\", "/")}" "$@"\n`,
-    );
-    chmodSync(join(repo.dir, "node_modules/.bin/ward"), 0o755);
+    writeWardBin(repo);
     expect(ward(repo).status).toBe(0);
 
     const commit = spawnSync("git", ["commit", "--allow-empty", "-m", "msg"], {
@@ -392,9 +386,13 @@ describe("installed hooks", () => {
     using repo = createTempRepo();
     repo.git("config", "core.hooksPath", ".githooks");
     // A bin that leaves a trace, to prove git ran the stub from .githooks.
+    // Shell and JS at once, for Node and Bun stubs (see writeWardBin).
     repo.write(
       "node_modules/.bin/ward",
-      '#!/bin/sh\necho "$@" >> ward-ran.txt\n',
+      `#!/bin/sh
+":" //; echo "$@" >> ward-ran.txt; exit 0
+require("node:fs").appendFileSync("ward-ran.txt", process.argv.slice(2).join(" ") + "\\n");
+`,
     );
     chmodSync(join(repo.dir, "node_modules/.bin/ward"), 0o755);
     expect(ward(repo, ["--respect-hooks-path"]).status).toBe(0);

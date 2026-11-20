@@ -43,6 +43,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:bun": "bun --bun vitest run",
     "test:watch": "vitest",
     "release": "bumpp --sign"
   },
