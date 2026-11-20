@@ -47,11 +47,14 @@ export function createTempRepo({ init = true }: Options = {}): TempRepo {
     GIT_COMMITTER_EMAIL: "test@ward.invalid",
   };
 
+  // Emptied, not deleted: Deno's child_process merges the parent's env into
+  // `env`, so a deleted variable still reaches the child. Empty means unset to
+  // ward and the stubs.
   // Tests run on CI runners, where install would skip itself (W10).
-  delete env.CI;
+  env.CI = "";
   // Ward's own switches from the developer's shell would change what stubs do.
-  delete env.WARD;
-  delete env.WARD_RUNTIME;
+  env.WARD = "";
+  env.WARD_RUNTIME = "";
 
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: dir, env, encoding: "utf8" }).trim();
