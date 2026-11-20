@@ -316,6 +316,8 @@ An invalid config fails every hook, not only the broken one: a typo in a hook na
 
 `npm ci` does not install the hooks there (`CI` is set), and the check fails with the command that applies the fixes locally.
 
+In GitHub Actions (`GITHUB_ACTIONS=true`), Ward also prints failures as annotations: a failed task, and with `--ci` every block of lines the tasks would change, shown on those lines in the pull request's "Files changed" tab. GitHub shows up to 10 error annotations per step; the full diff is always in the log.
+
 `ward` does nothing in CI (when `CI` is set), outside a git repository and when git is not installed, so `npm install` in Docker or CI does not fail.
 
 ### Existing hooks

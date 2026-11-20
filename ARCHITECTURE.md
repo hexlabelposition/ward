@@ -303,7 +303,10 @@ With `cache: true`, Ward stores content hashes of files that passed a task in `.
   - The base is the hook's backup, made for `--ci` even with `backup: false`, or `HEAD` when the tree is clean and there is nothing to back up. A dirty tree that can't be backed up (unresolved conflicts) is refused rather than reverted to `HEAD`.
   - The whole tree is compared, not only the tasks' files, so commands without placeholders (`npm run format`) are caught too: tracked files that differ from the base, and untracked files that were not there before (listed and deleted).
   - The tree is always restored and the backup dropped; `--no-backup` / `--no-revert` with `--ci` are errors. The exit code is that of a failed task, else 1 when anything changed.
-- When `GITHUB_ACTIONS=true`, failures are also printed as `::error file=…,line=…::` annotations.
+- When `GITHUB_ACTIONS=true`, failures are also printed to stdout as `::error` annotations (`report/github.ts`), so they show on the run and in the pull request:
+  - A failed task: one annotation with its name and exit code. Its own errors stay in the log; tools that print `file:line` errors can add a problem matcher or their own GitHub formatter.
+  - With `--ci`, one `::error file=…,line=…,endLine=…::` per block of lines the tasks would change, read from `git diff -U0` before the tree is restored. Lines are those of the checked out files, so the annotation sits on the code in the pull request. Files without text changes (binary) get one annotation without lines, created files one without a file.
+  - Paths are relative to the repo root, which GitHub resolves against `GITHUB_WORKSPACE`: the repo must be checked out there (the `actions/checkout` default).
 
 `ward` (install) stays a no-op when `CI` is set (not `0` / `false`), outside a git working tree, or when git is not installed, so `npm install` in Docker/CI doesn't fail.
 

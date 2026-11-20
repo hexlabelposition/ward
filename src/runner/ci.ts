@@ -2,10 +2,12 @@ import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { revertToBackup, revertToCommit } from "../git/backup.ts";
 import {
+  changedLinesSince,
   changedSince,
   diffSince,
   getHead,
   isTreeClean,
+  type LineRange,
   listUntracked,
 } from "../git/changes.ts";
 import type { GitOptions } from "../git/exec.ts";
@@ -46,16 +48,27 @@ export function startCiCheck(
   };
 }
 
+/** What the tasks changed, found by `finishCiCheck`. */
+export type CiResult = {
+  /** Tracked files that differ from the base, from the repo root. */
+  readonly changed: readonly string[];
+  /** Untracked files the tasks created (now deleted). */
+  readonly created: readonly string[];
+  /** The changed lines of `changed` in the base; empty unless asked for. */
+  readonly lines: ReadonlyMap<string, readonly LineRange[]>;
+};
+
 /**
  * After the tasks: print the diff of what they changed, put the index and
- * the tracked files back, delete the files they created and return how many
- * files they changed or created.
+ * the tracked files back, delete the files they created and return what
+ * they changed. With `lines`, also read the changed lines of each file
+ * (for annotations).
  */
 export function finishCiCheck(
   check: CiCheck,
   git: GitOptions,
-  { color = false }: { color?: boolean } = {},
-): number {
+  { color = false, lines = false }: { color?: boolean; lines?: boolean } = {},
+): CiResult {
   const changed = changedSince(check.base, git);
   const created = listUntracked(git).filter(
     (path) => !check.untracked.has(path),
@@ -65,6 +78,10 @@ export function finishCiCheck(
     console.log(diffSince(check.base, { ...git, color }));
   }
   for (const path of created) console.log(`new file: ${path}`);
+  const ranges =
+    lines && changed.length > 0
+      ? changedLinesSince(check.base, git)
+      : new Map<string, LineRange[]>();
 
   // Also when nothing changed on disk: a task may have changed the index.
   if (check.isBackup) {
@@ -75,5 +92,5 @@ export function finishCiCheck(
   const root = git.cwd ?? process.cwd();
   for (const path of created) rmSync(resolve(root, path), { force: true });
 
-  return changed.length + created.length;
+  return { changed, created, lines: ranges };
 }

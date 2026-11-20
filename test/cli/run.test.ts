@@ -1382,11 +1382,16 @@ describe("ward run --all-files", () => {
 
 describe("ward run --ci", () => {
   /** a.txt and b.txt committed, a clean tree, and a pre-commit hook. */
-  function ciRepo(hook: string, extra = "") {
+  function ciRepo(
+    hook: string,
+    extra = "",
+    files: Record<string, string> = {},
+  ) {
     const repo = createTempRepo();
     repo.commit("base", {
       "a.txt": "a\n",
       "b.txt": "b\n",
+      ...files,
       "ward.yml": `hooks:\n  pre-commit:\n${extra}    tasks:\n      t: { run: ${JSON.stringify(hook)} }\n`,
     });
     return repo;
@@ -1508,6 +1513,65 @@ describe("ward run --ci", () => {
 
     expect(status).toBe(1);
     expect(repo.git("status", "--porcelain")).toBe("");
+  });
+
+  describe("in GitHub Actions", () => {
+    function githubRun(repo: TempRepo, flags: string[] = ["--all-files"]) {
+      const env = { ...repo.env, GITHUB_ACTIONS: "true" };
+      return ward(repo, ["run", "pre-commit", "--ci", ...flags], repo.dir, env);
+    }
+
+    function annotations(stdout: string): string[] {
+      return stdout.split("\n").filter((line) => line.startsWith("::"));
+    }
+
+    it("annotates the lines the tasks would change", () => {
+      using repo = ciRepo(`${format()} {staged_files}`, "", {
+        "a.txt": "ok\nfix me\nfix me too\nOK\n",
+      });
+
+      const { status, stdout } = githubRun(repo);
+
+      expect(status).toBe(1);
+      const message =
+        "the tasks would change this; to apply the fixes, run: ward run pre-commit --all-files";
+      expect(annotations(stdout)).toEqual([
+        `::error file=a.txt,line=1,endLine=3,title=ward%3A pre-commit --ci::${message}`,
+        `::error file=b.txt,line=1,title=ward%3A pre-commit --ci::${message}`,
+        `::error file=ward.yml,line=1,endLine=4,title=ward%3A pre-commit --ci::${message}`,
+      ]);
+    });
+
+    it("annotates the files the tasks would create", () => {
+      using repo = ciRepo(node("require('fs').writeFileSync('gen.txt', 'g')"));
+
+      const { status, stdout } = githubRun(repo);
+
+      expect(status).toBe(1);
+      expect(annotations(stdout)).toEqual([
+        "::error title=ward%3A pre-commit --ci::the tasks would create gen.txt; to apply the fixes, run: ward run pre-commit --all-files",
+      ]);
+    });
+
+    it("annotates a failed task", () => {
+      using repo = ciRepo(node("process.exit(3)"));
+
+      const { status, stdout } = githubRun(repo);
+
+      expect(status).toBe(3);
+      expect(annotations(stdout)).toEqual([
+        "::error title=ward%3A pre-commit::t (exit 3): see the log of this step",
+      ]);
+    });
+
+    it("prints nothing extra when the check passes", () => {
+      using repo = ciRepo(`${node(PRINT_ARGS)} {staged_files}`);
+
+      const { status, stdout } = githubRun(repo);
+
+      expect(status).toBe(0);
+      expect(stdout).toBe("a.txt|b.txt|ward.yml\n");
+    });
   });
 
   it.each([

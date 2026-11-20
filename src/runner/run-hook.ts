@@ -28,7 +28,13 @@ import {
   fileSources,
 } from "./command.ts";
 import { execCommand, execFunction, type Prefixes } from "./exec.ts";
-import { type CiCheck, finishCiCheck, startCiCheck } from "./ci.ts";
+import {
+  type CiCheck,
+  type CiResult,
+  finishCiCheck,
+  startCiCheck,
+} from "./ci.ts";
+import { errorAnnotation, isGitHubActions } from "../report/github.ts";
 import { changedFiles, type Snapshot, snapshotFiles } from "./fixed.ts";
 import { colorEnv, taskPrefixes } from "./output.ts";
 import { matchFiles } from "./match.ts";
@@ -134,6 +140,10 @@ export type RunHookOptions = {
  * printed, the index and working tree are put back as they were and the new
  * files deleted. The hook fails with the exit code of a failed task, or 1
  * when the tasks changed anything.
+ *
+ * In GitHub Actions (`GITHUB_ACTIONS=true`), failures are also printed to
+ * stdout as `::error` annotations: a failed task, and with `ci` every block
+ * of lines the tasks would change, on the file and lines it is on.
  */
 export async function runHook({
   hook,
@@ -159,6 +169,7 @@ export async function runHook({
   const input = needsRefs || parallel ? await readStdin() : undefined;
 
   const git: GitOptions = { cwd: root, env };
+  const github = isGitHubActions(env);
   const cache = new Map<FileSource, readonly GitFile[]>();
   const filesOf = (source: FileSource): readonly GitFile[] => {
     let files = cache.get(source);
@@ -224,9 +235,15 @@ export async function runHook({
         }
       }
       if (code !== 0) {
-        console.error(
-          `ward: ${hook} failed: ${task.name} (exit ${String(code)})`,
-        );
+        const failed = `${task.name} (exit ${String(code)})`;
+        console.error(`ward: ${hook} failed: ${failed}`);
+        if (github) {
+          console.log(
+            errorAnnotation(`${failed}: see the log of this step`, {
+              title: `ward: ${hook}`,
+            }),
+          );
+        }
         return code;
       }
       // Synchronous, so parallel tasks never run `git add` at the same time.
@@ -303,13 +320,15 @@ export async function runHook({
   }
 
   if (check !== undefined) {
-    const color = env.GITHUB_ACTIONS === "true" || process.stdout.isTTY;
-    const changed = finishCiCheck(check, git, { color });
+    const color = github || process.stdout.isTTY;
+    const result = finishCiCheck(check, git, { color, lines: github });
     if (hash !== null) dropBackup(hash, git);
+    const changed = result.changed.length + result.created.length;
+    const rerun = `ward run ${hook} ${fromRef !== undefined ? `--from-ref ${fromRef}` : "--all-files"}`;
+    if (github) annotateCiResult(result, hook, rerun);
     if (code !== 0) return code;
     if (changed === 0) return 0;
     const files = changed === 1 ? "1 file" : `${String(changed)} files`;
-    const rerun = `ward run ${hook} ${fromRef !== undefined ? `--from-ref ${fromRef}` : "--all-files"}`;
     console.error(
       `ward: ${hook} failed: the tasks would change ${files} (shown above, now restored). To apply the fixes, run it without --ci: ${rerun}`,
     );
@@ -353,6 +372,37 @@ export async function runHook({
     keep(hash);
   }
   return code;
+}
+
+/**
+ * An annotation per changed block of lines, on the files as they are in the
+ * checked out commit, so a pull request shows them next to the code; one per
+ * file without text changes (binary) and per file the tasks created.
+ */
+function annotateCiResult(
+  { changed, created, lines }: CiResult,
+  hook: HookName,
+  rerun: string,
+): void {
+  const title = `ward: ${hook} --ci`;
+  const message = `the tasks would change this; to apply the fixes, run: ${rerun}`;
+  for (const file of changed) {
+    const ranges = lines.get(file) ?? [];
+    if (ranges.length === 0) {
+      console.log(errorAnnotation(message, { file, title }));
+    }
+    for (const range of ranges) {
+      console.log(errorAnnotation(message, { file, lines: range, title }));
+    }
+  }
+  for (const file of created) {
+    console.log(
+      errorAnnotation(
+        `the tasks would create ${file}; to apply the fixes, run: ${rerun}`,
+        { title },
+      ),
+    );
+  }
 }
 
 /**

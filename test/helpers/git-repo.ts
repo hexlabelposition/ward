@@ -52,6 +52,8 @@ export function createTempRepo({ init = true }: Options = {}): TempRepo {
   // ward and the stubs.
   // Tests run on CI runners, where install would skip itself (W10).
   env.CI = "";
+  // On GitHub runners Ward would also print annotations and color the diff.
+  env.GITHUB_ACTIONS = "";
   // On GitHub runners `ward run --ci` would print the diff in color (W69).
   env.GITHUB_ACTIONS = "";
   // Ward's own switches from the developer's shell would change what stubs do.
