@@ -8,11 +8,21 @@ const LOADER = pathToFileURL(
   resolve(import.meta.dirname, "../../src/config/load-ts.ts"),
 ).href;
 
+type Runtime = "node" | "bun";
+
+const RUNTIMES: Record<Runtime, { cmd: string; args: string[] }> = {
+  node: { cmd: process.execPath, args: ["--input-type=module", "-e"] },
+  bun: { cmd: "bun", args: ["-e"] },
+};
+
+/** Bun is optional locally; CI installs it for every test job. */
+const hasBun = spawnSync("bun", ["--version"]).status === 0;
+
 /**
- * Load in a real Node process: vitest would run the config through Vite,
+ * Load in a real runtime process: vitest would run the config through Vite,
  * which accepts TS syntax that Node's type stripping rejects.
  */
-function load(repo: TempRepo, file = "ward.config.ts") {
+function load(repo: TempRepo, runtime: Runtime, file = "ward.config.ts") {
   const script = `
     const { loadTsConfig } = await import(${JSON.stringify(LOADER)});
     try {
@@ -21,9 +31,10 @@ function load(repo: TempRepo, file = "ward.config.ts") {
       console.log(JSON.stringify({ name: error.name, message: error.message }));
     }
   `;
+  const { cmd, args } = RUNTIMES[runtime];
   const { stdout, stderr } = spawnSync(
-    process.execPath,
-    ["--input-type=module", "-e", script, join(repo.dir, file)],
+    cmd,
+    [...args, script, join(repo.dir, file)],
     { cwd: repo.dir, env: repo.env, encoding: "utf8" },
   );
   if (!stdout) throw new Error(stderr);
@@ -34,7 +45,9 @@ function load(repo: TempRepo, file = "ward.config.ts") {
   };
 }
 
-describe("loadTsConfig", () => {
+const runtimes: Runtime[] = hasBun ? ["node", "bun"] : ["node"];
+
+describe.each(runtimes)("loadTsConfig on %s", (runtime) => {
   it("returns the default export", () => {
     using repo = createTempRepo();
     repo.write(
@@ -45,7 +58,7 @@ export default hooks;
 `,
     );
 
-    expect(load(repo)).toEqual({ ok: { "pre-commit": "npm test" } });
+    expect(load(repo, runtime)).toEqual({ ok: { "pre-commit": "npm test" } });
   });
 
   it("loads without a package.json type", () => {
@@ -53,37 +66,25 @@ export default hooks;
     repo.write("package.json", "{}");
     repo.write("ward.config.ts", "export default { a: 1 as number };\n");
 
-    expect(load(repo)).toEqual({ ok: { a: 1 } });
+    expect(load(repo, runtime)).toEqual({ ok: { a: 1 } });
   });
 
   it("fails without a default export", () => {
     using repo = createTempRepo();
     repo.write("ward.config.ts", "export const config = {};\n");
 
-    expect(load(repo)).toEqual({
+    expect(load(repo, runtime)).toEqual({
       name: "ConfigError",
       message:
         "ward.config.ts has no default export: use `export default defineConfig({ ... })`",
     });
   });
 
-  it("explains syntax Node can't strip", () => {
-    using repo = createTempRepo();
-    repo.write("ward.config.ts", "export default {};\nenum A { B }\n");
-
-    const { name, message } = load(repo);
-
-    expect(name).toBe("ConfigError");
-    expect(message).toMatch(/^ward\.config\.ts:2: TypeScript enum/);
-    expect(message).toContain("Node only strips types");
-    expect(message).toContain("\n  enum A { B }\n  ^^^");
-  });
-
   it("points at syntax errors", () => {
     using repo = createTempRepo();
     repo.write("ward.config.ts", "export default {\n  a: ,\n};\n");
 
-    const { name, message } = load(repo);
+    const { name, message } = load(repo, runtime);
 
     expect(name).toBe("ConfigError");
     expect(message).toMatch(/^ward\.config\.ts:2: /);
@@ -94,7 +95,7 @@ export default hooks;
     using repo = createTempRepo();
     repo.write("ward.config.ts", 'throw new Error("boom");\n');
 
-    expect(load(repo)).toEqual({
+    expect(load(repo, runtime)).toEqual({
       name: "ConfigError",
       message: "ward.config.ts: boom",
     });
@@ -107,8 +108,61 @@ export default hooks;
       'import { defineConfig } from "nope-pkg";\nexport default defineConfig({});\n',
     );
 
-    expect(load(repo).message).toMatch(
+    expect(load(repo, runtime).message).toMatch(
       /^ward\.config\.ts: Cannot find package 'nope-pkg'/,
     );
+  });
+});
+
+describe("loadTsConfig on node only", () => {
+  it("explains syntax Node can't strip", () => {
+    using repo = createTempRepo();
+    repo.write("ward.config.ts", "export default {};\nenum A { B }\n");
+
+    const { name, message } = load(repo, "node");
+
+    expect(name).toBe("ConfigError");
+    expect(message).toMatch(/^ward\.config\.ts:2: TypeScript enum/);
+    expect(message).toContain("Node only strips types");
+    expect(message).toContain("\n  enum A { B }\n  ^^^");
+  });
+});
+
+describe.skipIf(!hasBun)("loadTsConfig on bun only", () => {
+  it("accepts full TS syntax", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "ward.config.ts",
+      `enum Mode {
+  Fast = "fast",
+}
+namespace Commands {
+  export const test = "npm test";
+}
+class Task {
+  constructor(public run: string) {}
+}
+const task = new Task(Commands.test);
+export default {
+  "pre-commit": { tasks: { [Mode.Fast]: { run: task.run } } },
+} satisfies Record<string, unknown>;
+`,
+    );
+
+    expect(load(repo, "bun")).toEqual({
+      ok: { "pre-commit": { tasks: { fast: { run: "npm test" } } } },
+    });
+  });
+
+  it("does not blame type stripping for a syntax error", () => {
+    using repo = createTempRepo();
+    repo.write("ward.config.ts", "export default {};\nconst a = <div>;\n");
+
+    const { name, message } = load(repo, "bun");
+
+    expect(name).toBe("ConfigError");
+    expect(message).toMatch(/^ward\.config\.ts:2: /);
+    expect(message).not.toContain("Node only strips types");
+    expect(message).toContain("\n  const a = <div>;\n                 ^");
   });
 });
