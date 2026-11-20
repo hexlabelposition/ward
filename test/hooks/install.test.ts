@@ -88,6 +88,27 @@ describe("installHooks", () => {
     );
   });
 
+  it("writes stubs for the given runtime", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+
+    installHooks(hooksDir, { runtime: "bun" });
+
+    expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(
+      renderStub("pre-commit", { runtime: "bun" }),
+    );
+  });
+
+  it("rewrites stubs when the runtime changes", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    installHooks(hooksDir);
+
+    expect(installHooks(hooksDir, { runtime: "bun" }).written).toEqual([
+      ...HOOKS,
+    ]);
+  });
+
   it("rewrites stubs when the bin path changes", () => {
     using repo = createTempRepo();
     const hooksDir = join(repo.dir, ".git", "hooks");

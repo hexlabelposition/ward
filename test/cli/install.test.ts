@@ -7,6 +7,9 @@ import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 
 const CLI = resolve(import.meta.dirname, "../../src/cli/index.ts");
 
+/** Bun is optional locally; CI installs it for every test job. */
+const hasBun = spawnSync("bun", ["--version"]).status === 0;
+
 function ward(repo: TempRepo, args: string[] = [], cwd = repo.dir) {
   const { status, stdout, stderr } = spawnSync(
     process.execPath,
@@ -33,6 +36,29 @@ describe("ward (install)", () => {
     for (const name of HOOKS) {
       expect(hook(repo, name)).toContain("bin='node_modules/.bin/ward'");
     }
+  });
+
+  it("writes stubs for the runtime running install", () => {
+    using repo = createTempRepo();
+
+    ward(repo);
+
+    const runtime = process.versions.bun === undefined ? "node" : "bun";
+    expect(hook(repo, "pre-commit")).toContain(
+      `"\${WARD_RUNTIME:-${runtime}}"`,
+    );
+  });
+
+  it.runIf(hasBun)("writes bun stubs when installed with bun", () => {
+    using repo = createTempRepo();
+
+    const { status } = spawnSync("bun", [CLI], {
+      cwd: repo.dir,
+      env: repo.env,
+    });
+
+    expect(status).toBe(0);
+    expect(hook(repo, "pre-commit")).toContain('"${WARD_RUNTIME:-bun}"');
   });
 
   it("reports up-to-date and updated stubs on reinstall", () => {

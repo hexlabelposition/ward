@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getStubVersion,
@@ -148,6 +148,124 @@ describe("renderStub", () => {
     commit(repo);
 
     expect(calledWith(repo)).toBe("run pre-commit");
+  });
+});
+
+describe("runtime", () => {
+  /** Fake `bun` in its own dir that records its args, then runs the binary with sh. */
+  function fakeBun(repo: TempRepo): NodeJS.ProcessEnv {
+    const dir = join(repo.dir, ".fake-bin");
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, "bun"),
+      `#!/bin/sh\necho "bun $*" > bun-called.txt\nexec sh "$@"\n`,
+    );
+    chmodSync(join(dir, "bun"), 0o755);
+    return { ...repo.env, PATH: `${dir}${delimiter}${repo.env.PATH ?? ""}` };
+  }
+
+  function bunCalledWith(repo: TempRepo) {
+    return readFileSync(join(repo.dir, "bun-called.txt"), "utf8").trim();
+  }
+
+  /** Commit with hooks enabled; returns git's exit code and stderr. */
+  function tryCommit(repo: TempRepo, env: NodeJS.ProcessEnv) {
+    const { status, stderr } = spawnSync(
+      "git",
+      ["commit", "--allow-empty", "--quiet", "-m", "msg"],
+      { cwd: repo.dir, env, encoding: "utf8" },
+    );
+    return { status, stderr };
+  }
+
+  it("defaults to the runtime from install", () => {
+    expect(renderStub("pre-commit")).toContain('"${WARD_RUNTIME:-node}"');
+    expect(renderStub("pre-commit", { runtime: "bun" })).toContain(
+      '"${WARD_RUNTIME:-bun}"',
+    );
+  });
+
+  it("starts the binary with bun in a bun stub", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit", { runtime: "bun" }));
+
+    commit(repo, repo.dir, fakeBun(repo));
+
+    expect(bunCalledWith(repo)).toBe(
+      "bun node_modules/.bin/ward run pre-commit",
+    );
+    expect(calledWith(repo)).toBe("run pre-commit");
+  });
+
+  it("runs on bun with WARD_RUNTIME=bun in a node stub", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit"));
+
+    commit(repo, repo.dir, { ...fakeBun(repo), WARD_RUNTIME: "bun" });
+
+    expect(bunCalledWith(repo)).toBe(
+      "bun node_modules/.bin/ward run pre-commit",
+    );
+  });
+
+  it("runs the binary directly with WARD_RUNTIME=node in a bun stub", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit", { runtime: "bun" }));
+
+    commit(repo, repo.dir, { ...fakeBun(repo), WARD_RUNTIME: "node" });
+
+    expect(calledWith(repo)).toBe("run pre-commit");
+    expect(existsSync(join(repo.dir, "bun-called.txt"))).toBe(false);
+  });
+
+  it("uses the default for an empty WARD_RUNTIME", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit"));
+
+    commit(repo, repo.dir, { ...fakeBun(repo), WARD_RUNTIME: "" });
+
+    expect(calledWith(repo)).toBe("run pre-commit");
+    expect(existsSync(join(repo.dir, "bun-called.txt"))).toBe(false);
+  });
+
+  it("fails on an unknown WARD_RUNTIME", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit"));
+
+    const { status, stderr } = tryCommit(repo, {
+      ...repo.env,
+      WARD_RUNTIME: "nodejs",
+    });
+
+    expect(status).not.toBe(0);
+    expect(stderr).toContain(
+      'ward: unknown WARD_RUNTIME="nodejs", expected node or bun',
+    );
+    expect(existsSync(join(repo.dir, "ward-called.txt"))).toBe(false);
+  });
+
+  // Runs the stub itself with an empty PATH: bun is often next to git and sh
+  // (/usr/bin), so it can't be dropped from PATH for a real commit.
+  posixOnly("fails with a hint when bun is not installed", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    repo.write("stub", renderStub("pre-commit", { runtime: "bun" }));
+
+    const { status, stderr } = spawnSync("/bin/sh", ["stub"], {
+      cwd: repo.dir,
+      env: { ...repo.env, PATH: join(repo.dir, "empty") },
+      encoding: "utf8",
+    });
+
+    expect(status).not.toBe(0);
+    expect(stderr).toContain("ward: bun not found in PATH");
+    expect(stderr).toContain("WARD_RUNTIME=node");
+    expect(existsSync(join(repo.dir, "ward-called.txt"))).toBe(false);
   });
 });
 

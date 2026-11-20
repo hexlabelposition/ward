@@ -9,6 +9,7 @@ import {
 } from "../hooks/install.ts";
 import type { HookName } from "../hooks/list.ts";
 import { CHAINED_SUFFIX } from "../hooks/stub.ts";
+import { detectRuntime, type Runtime } from "../runtime/detect.ts";
 import { isErrnoCode } from "../util/errors.ts";
 
 const BIN = join("node_modules", ".bin", "ward");
@@ -33,6 +34,11 @@ export type InstallOptions = {
    */
   bin?: string;
   /**
+   * Runtime the stubs start ward with. Default: the one running install, so
+   * `bun install` writes stubs that run on Bun.
+   */
+  runtime?: Runtime;
+  /**
    * Asks whether to chain the foreign hooks. Default: a y/N prompt when stdin
    * and stdout are a TTY; `null` when there is nobody to ask (`prepare` under
    * most package managers, IDEs), then foreign hooks are left as is.
@@ -53,6 +59,7 @@ export async function install({
   respectHooksPath = false,
   force = false,
   bin: binOption,
+  runtime = detectRuntime(),
   confirm = defaultConfirm(),
 }: InstallOptions = {}): Promise<number> {
   // Checked first: no git process at all in CI.
@@ -104,6 +111,7 @@ export async function install({
 
   const result = installHooks(paths.hooksDir, {
     bin: toPosix(relative(paths.root, bin)),
+    runtime,
     chain,
     force,
   });

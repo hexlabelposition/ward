@@ -49,6 +49,9 @@ export function createTempRepo({ init = true }: Options = {}): TempRepo {
 
   // Tests run on CI runners, where install would skip itself (W10).
   delete env.CI;
+  // Ward's own switches from the developer's shell would change what stubs do.
+  delete env.WARD;
+  delete env.WARD_RUNTIME;
 
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: dir, env, encoding: "utf8" }).trim();

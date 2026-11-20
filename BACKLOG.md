@@ -101,7 +101,7 @@ Done when: the full test suite passes under Bun and Deno in CI, and install work
 
 - [x] **W20** `runtime/detect`: detect Bun via `process.versions.bun`
 - [x] **W21** Verify TS config loads with native `import()` on Bun (full TS syntax)
-- [ ] **W22** Stub for Bun; `WARD_RUNTIME=bun` override
+- [x] **W22** Stub for Bun; `WARD_RUNTIME=bun` override
 - [ ] **W23** Run the test suite under Bun in CI
 - [ ] **W24** Verify `bun install` runs `prepare` and installs stubs (incl. workspaces)
 

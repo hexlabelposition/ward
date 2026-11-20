@@ -1,7 +1,8 @@
+import type { Runtime } from "../runtime/detect.ts";
 import type { HookName } from "./list.ts";
 
 /** Bump when the stub format changes, so `ward run` / install can rewrite old stubs. */
-export const STUB_VERSION = 1;
+export const STUB_VERSION = 2;
 
 /** Suffix of a foreign hook that was moved aside on install and now runs before ward. */
 export const CHAINED_SUFFIX = ".pre-ward";
@@ -21,6 +22,11 @@ export type StubOptions = {
    * root of the working tree). Default: `node_modules/.bin/ward`.
    */
   bin?: string;
+  /**
+   * Runtime the stub starts ward with, unless `WARD_RUNTIME` says otherwise at
+   * run time. Install passes the runtime it runs on. Default: `node`.
+   */
+  runtime?: Runtime;
 };
 
 /**
@@ -32,10 +38,15 @@ export type StubOptions = {
  *   is not ward's (git-lfs), and `--no-verify` is there to skip everything.
  * - If the binary is missing (dependencies not installed yet), it warns and
  *   lets git continue instead of blocking every commit.
+ * - `WARD_RUNTIME` (`node` / `bun`) picks the runtime, so a stub written by
+ *   `npm install` can run on Bun and the other way round. On Node the binary
+ *   runs through its shebang; Bun is started explicitly, since the shebang
+ *   names `node`, which may not be installed. An unknown value or a missing
+ *   `bun` fails the hook: it was asked for, so skipping would hide it.
  */
 export function renderStub(
   hook: HookName,
-  { bin = "node_modules/.bin/ward" }: StubOptions = {},
+  { bin = "node_modules/.bin/ward", runtime = "node" }: StubOptions = {},
 ): string {
   const chain = STDIN_HOOKS.has(hook)
     ? // stdin can be read once: keep a copy for both hooks.
@@ -64,7 +75,18 @@ ward() {
     echo "ward: $bin not found, skipping ${hook} (install dependencies to enable hooks)" >&2
     return 0
   fi
-  "$bin" run ${hook} "$@"
+  case "\${WARD_RUNTIME:-${runtime}}" in
+    node) "$bin" run ${hook} "$@" ;;
+    bun)
+      if ! command -v bun >/dev/null 2>&1; then
+        echo "ward: bun not found in PATH, can't run ${hook} (use WARD_RUNTIME=node, or WARD=0 to skip)" >&2
+        return 1
+      fi
+      bun "$bin" run ${hook} "$@" ;;
+    *)
+      echo "ward: unknown WARD_RUNTIME=\\"$WARD_RUNTIME\\", expected node or bun" >&2
+      return 1 ;;
+  esac
 }
 ${chain}ward "$@"
 `;
