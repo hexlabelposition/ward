@@ -1,4 +1,7 @@
 import type { Runtime } from "../runtime/detect.ts";
+
+/** Runtimes a stub can start ward with. Deno comes with its own stub (W64). */
+export type StubRuntime = Exclude<Runtime, "deno">;
 import type { HookName } from "./list.ts";
 
 /** Bump when the stub format changes, so `ward run` / install can rewrite old stubs. */
@@ -26,7 +29,7 @@ export type StubOptions = {
    * Runtime the stub starts ward with, unless `WARD_RUNTIME` says otherwise at
    * run time. Install passes the runtime it runs on. Default: `node`.
    */
-  runtime?: Runtime;
+  runtime?: StubRuntime;
 };
 
 /**

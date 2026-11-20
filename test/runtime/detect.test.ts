@@ -6,9 +6,10 @@ function versions(extra: Record<string, string>): NodeJS.ProcessVersions {
 }
 
 describe("detectRuntime", () => {
-  it("returns node without process.versions.bun", () => {
+  it("returns node without process.versions.bun and .deno", () => {
     const node = versions({ node: "24.3.0" });
     delete node.bun;
+    delete node.deno;
     expect(detectRuntime(node)).toBe("node");
   });
 
@@ -18,9 +19,19 @@ describe("detectRuntime", () => {
     );
   });
 
-  it("detects the current runtime by default", () => {
-    expect(detectRuntime()).toBe(
-      process.versions.bun === undefined ? "node" : "bun",
+  it("returns deno when process.versions.deno is set, even next to a node version", () => {
+    expect(detectRuntime(versions({ node: "24.3.0", deno: "2.5.0" }))).toBe(
+      "deno",
     );
+  });
+
+  it("detects the current runtime by default", () => {
+    const expected =
+      process.versions.bun !== undefined
+        ? "bun"
+        : process.versions.deno !== undefined
+          ? "deno"
+          : "node";
+    expect(detectRuntime()).toBe(expected);
   });
 });

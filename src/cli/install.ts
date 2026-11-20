@@ -8,8 +8,8 @@ import {
   type InstallResult,
 } from "../hooks/install.ts";
 import type { HookName } from "../hooks/list.ts";
-import { CHAINED_SUFFIX } from "../hooks/stub.ts";
-import { detectRuntime, type Runtime } from "../runtime/detect.ts";
+import { CHAINED_SUFFIX, type StubRuntime } from "../hooks/stub.ts";
+import { detectRuntime } from "../runtime/detect.ts";
 import { isErrnoCode } from "../util/errors.ts";
 
 const BIN = join("node_modules", ".bin", "ward");
@@ -37,7 +37,7 @@ export type InstallOptions = {
    * Runtime the stubs start ward with. Default: the one running install, so
    * `bun install` writes stubs that run on Bun.
    */
-  runtime?: Runtime;
+  runtime?: StubRuntime;
   /**
    * Asks whether to chain the foreign hooks. Default: a y/N prompt when stdin
    * and stdout are a TTY; `null` when there is nobody to ask (`prepare` under
@@ -59,7 +59,7 @@ export async function install({
   respectHooksPath = false,
   force = false,
   bin: binOption,
-  runtime = detectRuntime(),
+  runtime = stubRuntime(),
   confirm = defaultConfirm(),
 }: InstallOptions = {}): Promise<number> {
   // Checked first: no git process at all in CI.
@@ -254,6 +254,15 @@ function defaultConfirm(): InstallOptions["confirm"] {
       rl.close();
     }
   };
+}
+
+/**
+ * Stub runtime for the runtime running install. Deno has no stub yet (W64):
+ * its stubs run the binary as on Node, through the `node` shebang.
+ */
+function stubRuntime(): StubRuntime {
+  const runtime = detectRuntime();
+  return runtime === "deno" ? "node" : runtime;
 }
 
 function isFile(path: string): boolean {
