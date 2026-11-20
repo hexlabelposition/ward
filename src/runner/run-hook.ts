@@ -53,6 +53,11 @@ export type RunHookOptions = {
    * since this ref (`getRefFiles`), checked beforehand with `checkFromRef`.
    */
   fromRef?: string;
+  /**
+   * `--all-files`: staged and pushed files are replaced by every tracked
+   * file (`getAllFiles`). Not together with `fromRef`.
+   */
+  allFiles?: boolean;
 };
 
 /**
@@ -110,11 +115,12 @@ export type RunHookOptions = {
  * unstaged changes are put back on top of them, and a conflict leaves
  * conflict markers in the files.
  *
- * With `fromRef`, `{staged_files}`, `{push_files}` and the hook's files of
- * `glob`-only tasks are the files changed since that ref, so the same config
- * runs in CI. Nothing is staged there: fixes are not `git add`ed, no
- * unstaged changes are hidden, the empty-commit check is off and `pre-push`
- * stdin is not read. The backup and revert work as usual.
+ * With `fromRef` or `allFiles`, `{staged_files}`, `{push_files}` and the
+ * hook's files of `glob`-only tasks are the files changed since that ref, or
+ * every tracked file, so the same config runs in CI. Nothing is staged
+ * there: fixes are not `git add`ed, no unstaged changes are hidden, the
+ * empty-commit check is off and `pre-push` stdin is not read. The backup
+ * and revert work as usual.
  */
 export async function runHook({
   hook,
@@ -127,12 +133,15 @@ export async function runHook({
   backup = true,
   revert = true,
   fromRef,
+  allFiles = false,
 }: RunHookOptions): Promise<number> {
+  // The hook's own files (staged, pushed) are replaced for the whole run.
+  const replaced = fromRef !== undefined || allFiles;
   const sources = new Set(tasks.flatMap((task) => taskSources(task, hook)));
   // Read before the first task: a task could otherwise consume it. Parallel
-  // tasks can't share it either, so each gets a copy. With `fromRef` the
-  // push refs are not needed, and in CI there is no stdin to wait for.
-  const needsRefs = sources.has("push") && fromRef === undefined;
+  // tasks can't share it either, so each gets a copy. With the files
+  // replaced the push refs are not needed, and CI has no stdin to wait for.
+  const needsRefs = sources.has("push") && !replaced;
   const input = needsRefs || parallel ? await readStdin() : undefined;
 
   const git: GitOptions = { cwd: root, env };
@@ -141,9 +150,11 @@ export async function runHook({
     let files = cache.get(source);
     if (files === undefined) {
       files =
-        fromRef !== undefined && source !== "all"
-          ? getRefFiles(fromRef, git)
-          : listFiles(source, git, args, input ?? "");
+        !replaced || source === "all"
+          ? listFiles(source, git, args, input ?? "")
+          : fromRef !== undefined
+            ? getRefFiles(fromRef, git)
+            : getAllFiles(git);
       cache.set(source, files);
     }
     return files;
@@ -170,11 +181,9 @@ export async function runHook({
       return null;
     }
 
-    // With `fromRef`, "staged" files are the ref's: nothing to `git add`.
+    // Replaced "staged" files are not staged: nothing to `git add`.
     const before: Snapshot | undefined =
-      task.stageFixed !== false &&
-      files.staged !== undefined &&
-      fromRef === undefined
+      task.stageFixed !== false && files.staged !== undefined && !replaced
         ? snapshotFiles(root, files.staged)
         : undefined;
 
@@ -239,7 +248,7 @@ export async function runHook({
 
   // Read before anything else touches the index.
   const stagedBefore =
-    hook === "pre-commit" && fromRef === undefined && hasStagedChanges(git);
+    hook === "pre-commit" && !replaced && hasStagedChanges(git);
   const hash = backup ? createBackup(git) : null;
   // Without a backup there is nothing to revert to.
   const reverting = hash !== null && revert;
@@ -250,7 +259,7 @@ export async function runHook({
   };
   // Tasks that get staged files see only what is committed.
   const hidden =
-    sources.has("staged") && fromRef === undefined
+    sources.has("staged") && !replaced
       ? hideUnstagedChanges(
           filesOf("staged").map((file) => file.path),
           git,

@@ -23,7 +23,7 @@ git commit
                ├─ merge / rebase in progress? → exit 0
                ├─ load config (fresh, every time)
                ├─ no tasks for hook? → exit 0
-               ├─ collect files (staged / push / all / --from-ref)
+               ├─ collect files (staged / push / all / --from-ref / --all-files)
                ├─ back up state (unless --no-backup)
                ├─ hide unstaged changes of partially staged files
                ├─ run tasks (graph order, parallel where possible, cache)
@@ -207,8 +207,9 @@ type Task = {
 | `{push_files}`   | files changed by the pushed commits (`pre-push` stdin): `git log <local> --not <remote sha> --remotes=<remote>`, minus files gone from the pushed commit |
 | `{all_files}`    | `git ls-files -z`                                                                                                                                        |
 | `--from-ref`     | `git diff --raw -z --diff-filter=ACMR <ref>...HEAD`: files changed on the branch since it forked from `<ref>`                                            |
+| `--all-files`    | `git ls-files -z`, as `{all_files}`                                                                                                                      |
 
-`--from-ref <ref>` is not a placeholder: it replaces the staged and pushed files for the whole run, so `{staged_files}`, `{push_files}` and `glob`-only tasks get the branch's files and the same config runs in CI. `{all_files}` stays as it is. Nothing is staged in that mode: fixes are not `git add`ed, no unstaged changes are hidden, the empty-commit check is off and `pre-push` stdin is not read (CI has none). The backup and revert work as usual. `ward run` checks the ref first (`rev-parse --verify`, `merge-base`) and fails with a hint about `fetch-depth`, since a shallow clone or a missing base branch is the usual cause.
+`--from-ref <ref>` and `--all-files` are not placeholders: they replace the staged and pushed files for the whole run, so `{staged_files}`, `{push_files}` and `glob`-only tasks get the branch's files or every tracked file, and the same config runs in CI. `{all_files}` stays as it is; the two flags can't be combined. Nothing is staged in that mode: fixes are not `git add`ed, no unstaged changes are hidden, the empty-commit check is off and `pre-push` stdin is not read (CI has none). The backup and revert work as usual. `ward run` checks the ref first (`rev-parse --verify`, `merge-base`) and fails with a hint about `fetch-depth`, since a shallow clone or a missing base branch is the usual cause.
 
 Placeholders expand in one pass, so a file named `{1}.ts` is not expanded again. Each source is read from git once per run, when a task first uses it. `{push_files}` is only valid in `pre-push`: Ward reads the refs from stdin before the first task and gives every task a copy on its stdin.
 

@@ -122,7 +122,7 @@ Done when: a PR pipeline runs `ward run pre-commit --ci --from-ref origin/main` 
 ### CI mode
 
 - [x] **W68** `--from-ref <ref>`: files from the diff against the base branch
-- [ ] **W48** `--all-files`: run tasks on the whole repo
+- [x] **W48** `--all-files`: run tasks on the whole repo
 - [ ] **W69** `--ci`: no autofix - run, show the diff of what would be fixed, restore, fail on changes
 - [ ] **W70** GitHub Actions annotations output
 

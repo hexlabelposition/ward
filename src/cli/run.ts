@@ -20,10 +20,17 @@ export type RunOptions = {
    * since it forked from `ref`, instead of the staged or pushed files.
    */
   fromRef?: string;
+  /** `--all-files`: every tracked file instead of the staged or pushed ones. */
+  allFiles?: boolean;
 };
 
 /** Flags of `ward run` itself, given right after the hook name. */
-const RUN_FLAGS = ["--no-backup", "--no-revert", "--from-ref"] as const;
+const RUN_FLAGS = [
+  "--no-backup",
+  "--no-revert",
+  "--from-ref",
+  "--all-files",
+] as const;
 
 /**
  * Split `ward run` arguments into the hook, Ward's own flags and the hook
@@ -36,6 +43,7 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
   let backup = true;
   let revert = true;
   let fromRef: string | undefined;
+  let allFiles = false;
   let i = 0;
   for (; i < rest.length; i++) {
     const arg = rest[i] ?? "";
@@ -47,6 +55,7 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
     if (!(RUN_FLAGS as readonly string[]).includes(flag)) break;
     if (flag === "--no-backup") backup = false;
     if (flag === "--no-revert") revert = false;
+    if (flag === "--all-files") allFiles = true;
     if (flag === "--from-ref") {
       const value = inline ?? rest[++i];
       // A value starting with `-` would reach git as an option.
@@ -58,12 +67,16 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
       fromRef = value;
     }
   }
+  if (fromRef !== undefined && allFiles) {
+    throw new Error("use either --from-ref or --all-files, not both");
+  }
   return {
     hook,
     args: rest.slice(i),
     ...(!backup && { backup }),
     ...(!revert && { revert }),
     ...(fromRef !== undefined && { fromRef }),
+    ...(allFiles && { allFiles }),
   };
 }
 
@@ -86,7 +99,8 @@ function splitFromRef(arg: string): [string, string?] {
  * sets `backup: false` or `--no-backup` is given, and the hook goes back to
  * the backup when it fails unless it sets `revert: false` or `--no-revert`
  * is given. `--from-ref <ref>` runs the tasks on the files changed since
- * `ref` instead of the staged or pushed ones (`runHook`).
+ * `ref`, and `--all-files` on every tracked file, instead of the staged or
+ * pushed ones (`runHook`).
  */
 export async function run({
   hook,
@@ -96,6 +110,7 @@ export async function run({
   backup = true,
   revert = true,
   fromRef,
+  allFiles = false,
 }: RunOptions): Promise<number> {
   if (hook === undefined) {
     console.error("ward run: missing hook name, e.g. `ward run pre-commit`");
@@ -155,5 +170,6 @@ export async function run({
     backup: withBackup,
     revert: withRevert,
     ...(fromRef !== undefined && { fromRef }),
+    ...(allFiles && { allFiles }),
   });
 }

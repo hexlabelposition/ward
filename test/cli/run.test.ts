@@ -1307,6 +1307,78 @@ describe("ward run --from-ref", () => {
   });
 });
 
+describe("ward run --all-files", () => {
+  /** a.txt and b.ts committed, c.txt staged, d.txt untracked. */
+  function repoWithFiles() {
+    const repo = createTempRepo();
+    repo.commit("base", { "a.txt": "a\n", "b.ts": "b\n" });
+    repo.write("c.txt", "c\n");
+    repo.git("add", "c.txt");
+    repo.write("d.txt", "d\n");
+    return repo;
+  }
+
+  it("gives {staged_files} every tracked file", () => {
+    using repo = repoWithFiles();
+    repo.write(
+      "ward.yml",
+      `hooks:\n  pre-commit: ${JSON.stringify(`${node(PRINT_ARGS)} {staged_files}`)}\n`,
+    );
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit", "--all-files"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("a.txt|b.ts|c.txt\n");
+  });
+
+  it("matches glob-only tasks against every tracked file", () => {
+    using repo = repoWithFiles();
+    repo.write(
+      "ward.yml",
+      "hooks:\n  pre-push:\n    tasks:\n" +
+        `      ts: { run: ${JSON.stringify(node("console.log('ts')"))}, glob: "*.ts" }\n` +
+        `      md: { run: ${JSON.stringify(node("console.log('md')"))}, glob: "*.md" }\n`,
+    );
+
+    const { status, stdout } = ward(repo, ["run", "pre-push", "--all-files"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("ts\n");
+  });
+
+  it("leaves fixes unstaged", () => {
+    using repo = repoWithFiles();
+    repo.write(
+      "ward.yml",
+      `hooks:\n  pre-commit: ${JSON.stringify(`${format()} {staged_files}`)}\n`,
+    );
+
+    const { status } = ward(repo, ["run", "pre-commit", "--all-files"]);
+
+    expect(status).toBe(0);
+    expect(readFileSync(join(repo.dir, "a.txt"), "utf8")).toBe("A\n");
+    expect(repo.git("diff", "--cached", "--name-only")).toBe("c.txt");
+    expect(repo.git("diff", "--name-only")).toBe("a.txt\nb.ts\nc.txt");
+  });
+
+  it("fails together with --from-ref", () => {
+    using repo = repoWithFiles();
+
+    const { status, stderr } = ward(repo, [
+      "run",
+      "pre-commit",
+      "--all-files",
+      "--from-ref",
+      "HEAD",
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "ward: use either --from-ref or --all-files, not both",
+    );
+  });
+});
+
 describe("parseRunArgs", () => {
   it("reads Ward's flags right after the hook name", () => {
     expect(parseRunArgs(["pre-commit", "--no-backup", "a", "b"])).toEqual({
@@ -1367,6 +1439,21 @@ describe("parseRunArgs", () => {
     [["pre-commit", "--from-ref=-x"]],
   ])("rejects --from-ref without a ref: %j", (argv) => {
     expect(() => parseRunArgs(argv)).toThrow("--from-ref needs a ref");
+  });
+
+  it("reads --all-files", () => {
+    expect(parseRunArgs(["pre-commit", "--all-files", "--no-revert"])).toEqual({
+      hook: "pre-commit",
+      args: [],
+      allFiles: true,
+      revert: false,
+    });
+  });
+
+  it("rejects --all-files together with --from-ref", () => {
+    expect(() =>
+      parseRunArgs(["pre-commit", "--from-ref", "main", "--all-files"]),
+    ).toThrow("use either --from-ref or --all-files, not both");
   });
 
   it("passes --from-ref after the hook args to the hook", () => {
