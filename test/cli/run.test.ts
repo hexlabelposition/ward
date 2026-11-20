@@ -8,6 +8,7 @@ import {
   symlinkSync,
 } from "node:fs";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import { parseRunArgs } from "../../src/cli/run.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
@@ -1443,6 +1444,21 @@ describe("ward run --ci", () => {
     expect(status).toBe(1);
     expect(stdout).toContain("+x");
     expect(readFileSync(join(repo.dir, "b.txt"), "utf8")).toBe("b\n");
+  });
+
+  it("colors the diff on GitHub Actions", () => {
+    using repo = ciRepo(node("require('fs').writeFileSync('b.txt', 'x')"));
+
+    const { status, stdout } = ward(
+      repo,
+      ["run", "pre-commit", "--ci", "--all-files"],
+      repo.dir,
+      { ...repo.env, GITHUB_ACTIONS: "true" },
+    );
+
+    expect(status).toBe(1);
+    expect(stdout).toContain("\u001b[");
+    expect(stripVTControlCharacters(stdout)).toContain("+x");
   });
 
   it("lists and deletes the files the tasks created", () => {
