@@ -20,9 +20,9 @@ describe("detectRuntime", () => {
   });
 
   it("returns deno when process.versions.deno is set, even next to a node version", () => {
-    expect(detectRuntime(versions({ node: "24.3.0", deno: "2.5.0" }))).toBe(
-      "deno",
-    );
+    const deno = versions({ node: "24.3.0", deno: "2.5.0" });
+    delete deno.bun; // set when the tests run on Bun
+    expect(detectRuntime(deno)).toBe("deno");
   });
 
   it("detects the current runtime by default", () => {
