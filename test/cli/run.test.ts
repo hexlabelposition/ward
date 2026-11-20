@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseRunArgs } from "../../src/cli/run.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
-import { CLI, writeWardBin } from "../helpers/ward-bin.ts";
+import { CLI, evalCommand, writeWardBin } from "../helpers/ward-bin.ts";
 
 function ward(
   repo: TempRepo,
@@ -30,7 +30,7 @@ function ward(
 
 /** A command that runs a JS snippet (no double quotes) on any platform's shell. */
 function node(script: string): string {
-  return `"${process.execPath}" -e "${script}"`;
+  return evalCommand(script);
 }
 
 /** Prints the arguments it gets, joined by `|`. */

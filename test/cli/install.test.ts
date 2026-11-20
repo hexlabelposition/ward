@@ -3,11 +3,17 @@ import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HOOKS } from "../../src/hooks/list.ts";
+import { detectRuntime } from "../../src/runtime/detect.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
-import { CLI, writeWardBin } from "../helpers/ward-bin.ts";
+import { CLI, useWardBin, writeWardBin } from "../helpers/ward-bin.ts";
 
 /** How install hints tell to run ward again, on the runtime running the tests. */
-const RERUN = process.versions.bun === undefined ? "npx ward" : "bunx ward";
+const RUNTIME = detectRuntime();
+const RERUN = {
+  node: "npx ward",
+  bun: "bunx ward",
+  deno: "deno run -A npm:@hexlabelposition/ward",
+}[RUNTIME];
 
 /** Bun is optional locally; CI installs it for every test job. */
 const hasBun = spawnSync("bun", ["--version"]).status === 0;
@@ -45,9 +51,8 @@ describe("ward (install)", () => {
 
     ward(repo);
 
-    const runtime = process.versions.bun === undefined ? "node" : "bun";
     expect(hook(repo, "pre-commit")).toContain(
-      `"\${WARD_RUNTIME:-${runtime}}"`,
+      `"\${WARD_RUNTIME:-${RUNTIME}}"`,
     );
   });
 
@@ -398,6 +403,7 @@ require("node:fs").appendFileSync("ward-ran.txt", process.argv.slice(2).join(" "
 `,
     );
     chmodSync(join(repo.dir, "node_modules/.bin/ward"), 0o755);
+    useWardBin(repo);
     expect(ward(repo, ["--respect-hooks-path"]).status).toBe(0);
 
     const commit = spawnSync("git", ["commit", "--allow-empty", "-m", "msg"], {

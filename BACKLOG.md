@@ -110,7 +110,7 @@ Done when: the full test suite passes under Bun and Deno in CI, and install work
 - [x] **W79** `runtime/detect`: detect Deno via `process.versions.deno`
 - [x] **W64** Stub for Deno: `deno run -A npm:@hexlabelposition/ward`; `WARD_RUNTIME=deno` override
 - [x] **W80** Install via a `deno.json` task (no `prepare` lifecycle, no `node_modules/.bin`)
-- [ ] **W81** Run the test suite under Deno in CI
+- [x] **W81** Run the test suite under Deno in CI
 
 ## 0.4 - CI and shared configs
 

@@ -12,7 +12,7 @@ const LOADER = pathToFileURL(
 type Runtime = "node" | "bun";
 
 /**
- * Node from PATH when the tests run on Bun. `bun --bun` puts a `node` that is
+ * Node from PATH when the tests run on Bun or Deno. `bun --bun` puts a `node` that is
  * Bun itself first in PATH (`/tmp/bun-node-*`), so skip that one.
  */
 function findNode(): string | undefined {
@@ -29,7 +29,9 @@ function findNode(): string | undefined {
 }
 
 const nodePath =
-  process.versions.bun === undefined ? process.execPath : findNode();
+  process.versions.bun === undefined && process.versions.deno === undefined
+    ? process.execPath
+    : findNode();
 
 const RUNTIMES: Record<Runtime, { cmd: string; args: string[] }> = {
   node: { cmd: nodePath ?? "node", args: ["--input-type=module", "-e"] },

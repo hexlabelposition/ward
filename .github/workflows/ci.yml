@@ -82,10 +82,11 @@ jobs:
       - run: bun run build
       - run: bun run test:bun
 
-  # Smoke test: the built package starts under Deno.
-  # Running the full test suite on Deno is W81.
+  # The test suite on Deno: vitest, its workers and the CLI the tests spawn all
+  # run on Deno. Bun installs the dependencies; Node is there for the build and
+  # the Node-only config tests.
   test-deno:
-    name: smoke (${{ matrix.os }}, deno)
+    name: test (${{ matrix.os }}, deno)
     # The release workflow runs the same jobs on this commit, from its tag.
     if: "!(github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'chore: release v'))"
     strategy:
@@ -106,4 +107,4 @@ jobs:
           deno-version: v2.x
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - run: deno run -A dist/cli.mjs
+      - run: bun run test:deno
