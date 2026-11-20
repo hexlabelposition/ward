@@ -1,15 +1,16 @@
 # ward
 
-> Git hooks and staged-file tasks from one config. No hook folder in your repo.
+> Git hooks from one typed config. Tasks on staged files, safe partial staging, no hook folder in the repo. Node, Bun and Deno.
 
-`@hexlabelposition/ward` runs your git hooks from a single config file and runs tasks on the files of a commit or a push. It replaces **husky** and **lint-staged** with one tool.
+`@hexlabelposition/ward` runs your git hooks from a single config file and runs tasks on the files of a commit or a push.
 
 - **One config for all hooks** - `ward.config.ts` (typed, with autocomplete), `ward.yml`, or a `"ward"` section in `package.json`
-- **No `.husky/`-style folder** - hooks are generated locally into `.git/hooks`, only the config is committed
+- **No hook folder in the repo** - hooks are generated locally into `.git/hooks`, only the config is committed
 - **Tasks on staged files** - `eslint --fix {staged_files}`, with `glob` / `exclude` per task, fixes staged automatically
 - **Safe with partial staging** - unstaged changes are hidden while tasks run, and a failed run is reverted from a backup
 - **Careful with existing hooks** - a hook that is already there (git-lfs, a hand-written script) is never overwritten silently
 - **Clear config errors** - every problem is listed with its place in the config and a suggestion for typos
+- **Node, Bun and Deno** - installs with `npm`, `bun install` or a `deno.json` task, and `ward.config.ts` needs no loader on any of them
 
 > ⚠️ Status: early versions. `0.x` releases may change the config and behavior. See [GitHub Releases](https://github.com/hexlabelposition/ward/releases) for what changed and [BACKLOG.md](./BACKLOG.md) for what is planned.
 
