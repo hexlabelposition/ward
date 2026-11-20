@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConfigError } from "./errors.ts";
 
@@ -42,12 +42,19 @@ function describe(error: unknown): string {
   return message;
 }
 
+function syntaxLocation(
+  error: unknown,
+  file: string,
+): { line: string; frame: string } | null {
+  return nodeSyntaxLocation(error, file) ?? bunSyntaxLocation(error, file);
+}
+
 /**
  * Node puts the line of a syntax error in the stack, not the message:
  * `/path/ward.config.ts:3`, then a few source lines with a `^^^` marker,
  * then an empty line.
  */
-function syntaxLocation(
+function nodeSyntaxLocation(
   error: unknown,
   file: string,
 ): { line: string; frame: string } | null {
@@ -62,4 +69,36 @@ function syntaxLocation(
     line: match[2],
     frame: frame.map((line) => `  ${line}`.trimEnd()).join("\n"),
   };
+}
+
+/**
+ * Bun throws a `BuildMessage` (not a `SyntaxError`) with no stack: the
+ * location is in `position`, with a 1-based line and column.
+ */
+function bunSyntaxLocation(
+  error: unknown,
+  file: string,
+): { line: string; frame: string } | null {
+  if (!(error instanceof Error) || error.name !== "BuildMessage") return null;
+  const { position } = error as { position?: unknown };
+  if (typeof position !== "object" || position === null) return null;
+  const {
+    file: at,
+    line,
+    column,
+    lineText,
+  } = position as Record<string, unknown>;
+  if (
+    typeof at !== "string" ||
+    resolve(at) !== resolve(file) ||
+    typeof line !== "number" ||
+    typeof lineText !== "string"
+  ) {
+    return null;
+  }
+  const frame = [`  ${lineText}`.trimEnd()];
+  if (typeof column === "number" && column >= 1) {
+    frame.push(`  ${" ".repeat(column - 1)}^`);
+  }
+  return { line: String(line), frame: frame.join("\n") };
 }
