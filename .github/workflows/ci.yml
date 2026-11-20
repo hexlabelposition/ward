@@ -80,6 +80,9 @@ jobs:
           node-version: 24
       - run: bun install --frozen-lockfile
       - run: bun run build
+      # The built CLI on Bun: finds, loads and validates this repo's
+      # ward.config.ts, then exits as the hook has no tasks.
+      - run: bun dist/cli.mjs run post-checkout
       - run: bun run test:bun
 
   # The test suite on Deno: vitest, its workers and the CLI the tests spawn all
@@ -107,4 +110,6 @@ jobs:
           deno-version: v2.x
       - run: bun install --frozen-lockfile
       - run: bun run build
+      # The built CLI on Deno, as in test-bun.
+      - run: deno run -A dist/cli.mjs run post-checkout
       - run: bun run test:deno
