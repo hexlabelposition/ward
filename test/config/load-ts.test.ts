@@ -9,7 +9,7 @@ const LOADER = pathToFileURL(
   resolve(import.meta.dirname, "../../src/config/load-ts.ts"),
 ).href;
 
-type Runtime = "node" | "bun";
+type Runtime = "node" | "bun" | "deno";
 
 /**
  * Node from PATH when the tests run on Bun or Deno. `bun --bun` puts a `node` that is
@@ -36,10 +36,15 @@ const nodePath =
 const RUNTIMES: Record<Runtime, { cmd: string; args: string[] }> = {
   node: { cmd: nodePath ?? "node", args: ["--input-type=module", "-e"] },
   bun: { cmd: "bun", args: ["-e"] },
+  // `deno eval` has all permissions.
+  deno: { cmd: "deno", args: ["eval"] },
 };
 
 /** Bun is optional locally; CI installs it for every test job. */
 const hasBun = spawnSync("bun", ["--version"]).status === 0;
+
+/** Deno is optional locally; CI installs it for the Deno test job. */
+const hasDeno = spawnSync("deno", ["--version"]).status === 0;
 
 /**
  * Load in a real runtime process: vitest would run the config through Vite,
@@ -49,7 +54,8 @@ function load(repo: TempRepo, runtime: Runtime, file = "ward.config.ts") {
   const script = `
     const { loadTsConfig } = await import(${JSON.stringify(LOADER)});
     try {
-      console.log(JSON.stringify({ ok: await loadTsConfig(process.argv[1]) }));
+      // The last argument: deno eval puts its eval file before it.
+      console.log(JSON.stringify({ ok: await loadTsConfig(process.argv.at(-1)) }));
     } catch (error) {
       console.log(JSON.stringify({ name: error.name, message: error.message }));
     }
@@ -71,9 +77,15 @@ function load(repo: TempRepo, runtime: Runtime, file = "ward.config.ts") {
 /** Node is optional when the tests run on Bun. */
 const hasNode = nodePath !== undefined;
 
+/** Runtimes that run full TS, not only erasable syntax. */
+const fullTs: Runtime[] = [
+  ...(hasBun ? (["bun"] as const) : []),
+  ...(hasDeno ? (["deno"] as const) : []),
+];
+
 const runtimes: Runtime[] = [
   ...(hasNode ? (["node"] as const) : []),
-  ...(hasBun ? (["bun"] as const) : []),
+  ...fullTs,
 ];
 
 describe.each(runtimes)("loadTsConfig on %s", (runtime) => {
@@ -138,7 +150,9 @@ export default hooks;
     );
 
     expect(load(repo, runtime).message).toMatch(
-      /^ward\.config\.ts: Cannot find package 'nope-pkg'/,
+      runtime === "deno"
+        ? /^ward\.config\.ts: Import "nope-pkg" not a dependency$/
+        : /^ward\.config\.ts: Cannot find package 'nope-pkg'/,
     );
   });
 });
@@ -157,7 +171,7 @@ describe.skipIf(!hasNode)("loadTsConfig on node only", () => {
   });
 });
 
-describe.skipIf(!hasBun)("loadTsConfig on bun only", () => {
+describe.each(fullTs)("loadTsConfig on %s (full TS)", (runtime) => {
   it("accepts full TS syntax", () => {
     using repo = createTempRepo();
     repo.write(
@@ -178,7 +192,7 @@ export default {
 `,
     );
 
-    expect(load(repo, "bun")).toEqual({
+    expect(load(repo, runtime)).toEqual({
       ok: { "pre-commit": { tasks: { fast: { run: "npm test" } } } },
     });
   });
@@ -187,7 +201,7 @@ export default {
     using repo = createTempRepo();
     repo.write("ward.config.ts", "export default {};\nconst a = <div>;\n");
 
-    const { name, message } = load(repo, "bun");
+    const { name, message } = load(repo, runtime);
 
     expect(name).toBe("ConfigError");
     expect(message).toMatch(/^ward\.config\.ts:2: /);

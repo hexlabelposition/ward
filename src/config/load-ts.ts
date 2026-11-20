@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { ConfigError } from "./errors.ts";
 
 /**
@@ -32,7 +34,8 @@ export async function loadTsConfig(file: string): Promise<unknown> {
 
 function describe(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
-  const message = error.message.split("\n")[0] ?? "";
+  // Deno colors its messages even when stderr is not a terminal.
+  const message = stripVTControlCharacters(error.message).split("\n")[0] ?? "";
   if ("code" in error && error.code === "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX") {
     return (
       `${message}. Node only strips types: replace enum, namespace and ` +
@@ -46,7 +49,11 @@ function syntaxLocation(
   error: unknown,
   file: string,
 ): { line: string; frame: string } | null {
-  return nodeSyntaxLocation(error, file) ?? bunSyntaxLocation(error, file);
+  return (
+    nodeSyntaxLocation(error, file) ??
+    bunSyntaxLocation(error, file) ??
+    denoSyntaxLocation(error, file)
+  );
 }
 
 /**
@@ -100,5 +107,35 @@ function bunSyntaxLocation(
   if (typeof column === "number" && column >= 1) {
     frame.push(`  ${" ".repeat(column - 1)}^`);
   }
+  return { line: String(line), frame: frame.join("\n") };
+}
+
+/**
+ * Deno throws a `TypeError` whose message is `SyntaxError: ...`, its own
+ * frame, then `at file:///path/ward.config.ts:2:6` (1-based line and column).
+ * The frame is rebuilt from the file, in the same form as on Bun.
+ */
+function denoSyntaxLocation(
+  error: unknown,
+  file: string,
+): { line: string; frame: string } | null {
+  if (!(error instanceof Error)) return null;
+  const message = stripVTControlCharacters(error.message);
+  if (!message.startsWith("SyntaxError: ")) return null;
+  const match = /^\s+at (file:\/\/.+):(\d+):(\d+)$/m.exec(message);
+  if (!match?.[1] || !match[2] || !match[3]) return null;
+  if (resolve(fileURLToPath(match[1])) !== resolve(file)) return null;
+
+  const line = Number(match[2]);
+  const column = Number(match[3]);
+  let lineText: string | undefined;
+  try {
+    lineText = readFileSync(file, "utf8").split(/\r?\n/)[line - 1];
+  } catch {
+    return null;
+  }
+  if (lineText === undefined) return null;
+  const frame = [`  ${lineText}`.trimEnd()];
+  if (column >= 1) frame.push(`  ${" ".repeat(column - 1)}^`);
   return { line: String(line), frame: frame.join("\n") };
 }
