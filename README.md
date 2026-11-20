@@ -25,6 +25,24 @@ npm run prepare
 
 The `prepare` script runs on every `npm install`, so hooks are set up for everyone on the team automatically. With Bun, `bun add -d @hexlabelposition/ward` and the same `prepare` script work: `bun install` runs it too, also in workspace packages.
 
+With Deno, there is no `prepare` lifecycle: add a task and run it after cloning and after updating Ward.
+
+```bash
+deno add npm:@hexlabelposition/ward
+```
+
+```json
+{
+  "tasks": {
+    "prepare": "deno run -A npm:@hexlabelposition/ward"
+  }
+}
+```
+
+```bash
+deno task prepare
+```
+
 Then add a config. The shortest one lives in `package.json`:
 
 ```json

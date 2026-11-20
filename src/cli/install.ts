@@ -14,6 +14,17 @@ import { isErrnoCode } from "../util/errors.ts";
 
 const BIN = join("node_modules", ".bin", "ward");
 
+/**
+ * How to run install again on each runtime, for hints. Deno has no
+ * `node_modules/.bin` by default, so it runs the package from npm, at the
+ * version from deno.json / package.json.
+ */
+const INSTALL_COMMAND: Record<Runtime, string> = {
+  node: "npx ward",
+  bun: "bunx ward",
+  deno: "deno run -A npm:@hexlabelposition/ward",
+};
+
 export type InstallOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -86,7 +97,11 @@ export async function install({
   if (paths.hooksDir !== join(paths.commonDir, "hooks")) {
     const ownDir = isRepoOwned(paths);
     if (!respectHooksPath || !ownDir) {
-      reportHooksPath(paths, { cwd, env }, { respectHooksPath, ownDir });
+      reportHooksPath(
+        paths,
+        { cwd, env },
+        { respectHooksPath, ownDir, command: INSTALL_COMMAND[runtime] },
+      );
       return 1;
     }
   }
@@ -117,7 +132,7 @@ export async function install({
   });
 
   const rerun = [
-    "npx ward",
+    INSTALL_COMMAND[runtime],
     ...(respectHooksPath ? ["--respect-hooks-path"] : []),
     ...(binOption === undefined ? [] : ["--bin", shellArg(binOption)]),
   ].join(" ");
@@ -186,7 +201,11 @@ function isRepoOwned({ root, commonDir, hooksDir }: RepoPaths): boolean {
 function reportHooksPath(
   { root, hooksDir }: RepoPaths,
   gitOptions: { cwd: string; env: NodeJS.ProcessEnv },
-  { respectHooksPath, ownDir }: { respectHooksPath: boolean; ownDir: boolean },
+  {
+    respectHooksPath,
+    ownDir,
+    command,
+  }: { respectHooksPath: boolean; ownDir: boolean; command: string },
 ) {
   const config = getConfig("core.hooksPath", gitOptions);
   const shown = ownDir ? toPosix(relative(root, hooksDir)) : hooksDir;
@@ -206,12 +225,12 @@ function reportHooksPath(
 
   const unset = unsetCommand(config?.scope ?? null);
   const fixes: [command: string, note: string][] = [];
-  if (unset) fixes.push([unset, "use .git/hooks, then run: npx ward"]);
+  if (unset) fixes.push([unset, `use .git/hooks, then run: ${command}`]);
   if (ownDir)
-    fixes.push(["npx ward --respect-hooks-path", `install into ${shown}`]);
+    fixes.push([`${command} --respect-hooks-path`, `install into ${shown}`]);
   if (!unset) {
     lines.push(
-      "  remove core.hooksPath from git -c / GIT_CONFIG_*, then run: npx ward",
+      `  remove core.hooksPath from git -c / GIT_CONFIG_*, then run: ${command}`,
     );
   }
   const width = Math.max(...fixes.map(([command]) => command.length));

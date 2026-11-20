@@ -6,6 +6,9 @@ import { HOOKS } from "../../src/hooks/list.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 import { CLI, writeWardBin } from "../helpers/ward-bin.ts";
 
+/** How install hints tell to run ward again, on the runtime running the tests. */
+const RERUN = process.versions.bun === undefined ? "npx ward" : "bunx ward";
+
 /** Bun is optional locally; CI installs it for every test job. */
 const hasBun = spawnSync("bun", ["--version"]).status === 0;
 
@@ -123,7 +126,7 @@ describe("ward (install)", () => {
 
     const { stderr } = ward(repo, ["--bin", "dist/cli.mjs"]);
 
-    expect(stderr).toContain("npx ward --bin dist/cli.mjs --chain");
+    expect(stderr).toContain(`${RERUN} --bin dist/cli.mjs --chain`);
   });
 
   it("warns about foreign hooks and keeps them", () => {
@@ -136,8 +139,8 @@ describe("ward (install)", () => {
     expect(stderr).toContain(
       "hooks not installed by ward found in .git/hooks: pre-commit",
     );
-    expect(stderr).toContain("npx ward --chain");
-    expect(stderr).toContain("npx ward --force");
+    expect(stderr).toContain(`${RERUN} --chain`);
+    expect(stderr).toContain(`${RERUN} --force`);
     expect(hook(repo, "pre-commit")).toBe("#!/bin/sh\necho mine\n");
   });
 
@@ -177,7 +180,7 @@ describe("ward (install)", () => {
     const { stderr } = ward(repo, ["--chain"]);
 
     expect(stderr).toContain("pre-commit.pre-ward already exists");
-    expect(stderr).toContain("npx ward --chain --force");
+    expect(stderr).toContain(`${RERUN} --chain --force`);
   });
 
   it("refuses to install when core.hooksPath is set", () => {
@@ -191,7 +194,7 @@ describe("ward (install)", () => {
       'core.hooksPath is set to ".husky" (local config): git runs hooks from .husky and ignores .git/hooks.',
     );
     expect(stderr).toContain("git config --unset core.hooksPath");
-    expect(stderr).toContain("npx ward --respect-hooks-path");
+    expect(stderr).toContain(`${RERUN} --respect-hooks-path`);
     expect(existsSync(join(repo.dir, ".husky"))).toBe(false);
     expect(existsSync(join(repo.dir, ".git", "hooks", "pre-commit"))).toBe(
       false,
@@ -252,7 +255,7 @@ describe("ward (install)", () => {
 
     expect(status).toBe(0);
     expect(stderr).toContain("found in .githooks: pre-commit");
-    expect(stderr).toContain("npx ward --respect-hooks-path --chain");
+    expect(stderr).toContain(`${RERUN} --respect-hooks-path --chain`);
   });
 
   it("chains foreign hooks in core.hooksPath", () => {
@@ -283,7 +286,7 @@ describe("ward (install)", () => {
       expect(status).toBe(1);
       expect(stderr).toContain("not installing into");
       expect(stderr).toContain("git config --unset core.hooksPath");
-      expect(stderr).not.toContain("npx ward --respect-hooks-path");
+      expect(stderr).not.toContain(`${RERUN} --respect-hooks-path`);
       expect(existsSync(join(repo.dir, "pre-commit"))).toBe(false);
       expect(existsSync(join(repo.dir, "..", "ward-shared-hooks"))).toBe(false);
     },

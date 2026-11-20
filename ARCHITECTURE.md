@@ -90,7 +90,7 @@ The code targets the Node API surface that Bun and Deno implement, so one build 
 - **TS config:** native `import()` everywhere. Node only strips types (erasable syntax); Bun and Deno accept full TS.
 - **Stub:** generated for the runtime that ran install; `WARD_RUNTIME` overrides it at run time.
 - **Install on Bun:** `bun install` runs the `prepare` script of the root and of workspace packages, same as npm. It starts `ward` through the `node` shebang, so with Node installed the stubs are Node stubs; without Node, Bun puts its own `node` first in PATH and the stubs are Bun stubs. `init` detects `bun.lock` / `bun.lockb`.
-- **Install on Deno:** there is no `prepare` lifecycle and no `node_modules/.bin` by default, so the stub calls `deno run -A npm:@hexlabelposition/ward` and `init` adds a `deno.json` task (`deno task prepare`). `init` detects `deno.json` / `deno.lock`.
+- **Install on Deno:** there is no `prepare` lifecycle (`deno install` runs neither a `deno.json` task nor the `package.json` `prepare`, even with `--allow-scripts`) and no `node_modules/.bin` by default. So the stub calls `deno run -A npm:@hexlabelposition/ward`, the user runs `deno task prepare` once per clone, and `init` adds that `deno.json` task. Install hints show the same command instead of `npx ward`. `init` detects `deno.json` / `deno.lock`.
 
 ### No `.ward/` folder - stubs in `.git/hooks`
 
