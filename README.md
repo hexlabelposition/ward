@@ -15,7 +15,7 @@
 
 ## Install
 
-Requires Node ≥ 24 and Git ≥ 2.20.
+Requires Git ≥ 2.20 and Node ≥ 24, Bun or Deno 2. CI tests the latest Bun and Deno 2.x.
 
 ```bash
 npm install -D @hexlabelposition/ward
