@@ -47,3 +47,4 @@ Rewrite the draft in the style of v0.1.0 and v0.2.0, then publish it:
 - Deno's `child_process` merges the parent's env into `env`: set a variable to `""` instead of deleting it.
 - `bun --bun` puts a fake `node` (Bun) first in `PATH`; tests that need real Node find it with `findNode()` in `test/config/load-ts.test.ts`.
 - Bun on Windows writes `.bin/ward.exe`, not `.bin/ward`.
+- `test:deno` runs vitest through `test/run-deno.ts`, which drops Deno's "IPC channel is already disconnected" error from closing vitest's workers (seen on Windows). Remove the wrapper once Deno fixes it.
