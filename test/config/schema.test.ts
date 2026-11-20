@@ -51,6 +51,45 @@ describe("validateConfig", () => {
     ]);
   });
 
+  it("accepts camelCase hook names", () => {
+    expect(
+      issues({
+        hooks: {
+          preCommit: "npm test",
+          commitMsg: "commitlint --edit {1}",
+          prePush: { tasks: { test: { run: "npm test {push_files}" } } },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("suggests a close hook name in the spelling of the key", () => {
+    expect(issues({ hooks: { preComit: "npm test" } })).toEqual([
+      'hooks.preComit: unknown hook. Did you mean "preCommit"?',
+    ]);
+  });
+
+  it("rejects the same hook in both spellings", () => {
+    expect(
+      issues({
+        hooks: { "pre-commit": "npm test", preCommit: "npm run lint" },
+      }),
+    ).toEqual([
+      'hooks.preCommit: the same hook as "pre-commit": keep one of them',
+    ]);
+  });
+
+  it("checks a camelCase hook as the hook it names", () => {
+    expect(issues({ hooks: { preCommit: "npm test {push_files}" } })).toEqual(
+      issues({ hooks: { "pre-commit": "npm test {push_files}" } }).map(
+        (issue) => issue.replace("hooks.pre-commit", "hooks.preCommit"),
+      ),
+    );
+    expect(
+      issues({ hooks: { preCommit: "npm test {push_files}" } }),
+    ).not.toEqual([]);
+  });
+
   it("does not suggest a hook that is not close", () => {
     expect(issues({ hooks: { deploy: "npm test" } })).toEqual([
       "hooks.deploy: unknown hook",
@@ -60,6 +99,12 @@ describe("validateConfig", () => {
   it("points hooks at the top level to `hooks:`", () => {
     expect(issues({ "pre-commit": "npm test" })).toEqual([
       "pre-commit: hooks go under `hooks:`, e.g. `hooks: { pre-commit: … }`",
+    ]);
+  });
+
+  it("points camelCase hooks at the top level to `hooks:`", () => {
+    expect(issues({ preCommit: "npm test" })).toEqual([
+      "preCommit: hooks go under `hooks:`, e.g. `hooks: { preCommit: … }`",
     ]);
   });
 
@@ -288,6 +333,14 @@ describe("normalizeConfig", () => {
 
   it("turns a string into one task named after the command", () => {
     expect(normalizeConfig({ hooks: { "pre-commit": "npm test" } })).toEqual({
+      hooks: {
+        "pre-commit": { tasks: [{ name: "npm test", run: "npm test" }] },
+      },
+    });
+  });
+
+  it("names camelCase hooks as in git", () => {
+    expect(normalizeConfig({ hooks: { preCommit: "npm test" } })).toEqual({
       hooks: {
         "pre-commit": { tasks: [{ name: "npm test", run: "npm test" }] },
       },

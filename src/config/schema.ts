@@ -1,4 +1,9 @@
-import { HOOKS, type HookName, isHookName } from "../hooks/list.ts";
+import {
+  CAMEL_HOOKS,
+  HOOKS,
+  type HookName,
+  resolveHookName,
+} from "../hooks/list.ts";
 import { DEFAULT_FILE_SOURCE, fileSources } from "../runner/command.ts";
 import { checkGlob } from "../runner/match.ts";
 import type { Config, HookConfig, TaskFunction } from "./define.ts";
@@ -86,7 +91,7 @@ function checkConfig(raw: unknown, report: Report): void {
 
   for (const key of Object.keys(raw)) {
     if (key === "hooks") continue;
-    if (isHookName(key)) {
+    if (resolveHookName(key)) {
       report(key, "hooks go under `hooks:`, e.g. `hooks: { " + key + ": … }`");
     } else {
       report(key, unknownOption(key, "config"));
@@ -99,12 +104,22 @@ function checkConfig(raw: unknown, report: Report): void {
     report("hooks", `expected an object of hooks, got ${describe(hooks)}`);
     return;
   }
-  for (const [hook, value] of Object.entries(hooks)) {
-    const path = join("hooks", hook);
-    if (!isHookName(hook)) {
-      report(path, `unknown hook${suggest(hook, HOOKS)}`);
+  const seen = new Map<HookName, string>();
+  for (const [key, value] of Object.entries(hooks)) {
+    const path = join("hooks", key);
+    const hook = resolveHookName(key);
+    if (!hook) {
+      // Suggest in the spelling the key is written in.
+      const camel = /[A-Z]/.test(key) && !key.includes("-");
+      report(path, `unknown hook${suggest(key, camel ? CAMEL_HOOKS : HOOKS)}`);
       continue;
     }
+    const other = seen.get(hook);
+    if (other !== undefined) {
+      report(path, `the same hook as "${other}": keep one of them`);
+      continue;
+    }
+    seen.set(hook, key);
     checkHook(value, hook, path, report);
   }
 }
@@ -343,10 +358,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
  */
 export function normalizeConfig(config: Config): ResolvedConfig {
   const hooks: Partial<Record<HookName, Hook>> = {};
-  for (const [name, value] of Object.entries(config.hooks ?? {}) as [
-    HookName,
-    HookConfig,
-  ][]) {
+  for (const [key, value] of Object.entries(config.hooks ?? {})) {
+    // Validated: the key is a hook name, as `pre-commit` or `preCommit`.
+    const name = resolveHookName(key);
+    if (!name) continue;
     const parallel = isObjectForm(value) && value.parallel === true;
     const noBackup = isObjectForm(value) && value.backup === false;
     const noRevert = isObjectForm(value) && value.revert === false;

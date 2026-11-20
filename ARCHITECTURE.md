@@ -158,6 +158,8 @@ Function tasks and the task graph (`dependsOn`, `root`) are only available in th
 
 `defineConfig` gives types and autocomplete; `schema.ts` validates every source at load time with clear errors (unknown hook, unknown option, bad glob). It lists every problem with its path in the config (`hooks.pre-push[1]`) and suggests close names; options from later versions fail as "not supported yet" instead of being ignored. A JSON Schema covers YAML and `package.json`.
 
+Hook keys are git's names (`pre-commit`) or their camelCase spelling (`preCommit`), in every format; the same hook in both spellings is an error, and a typo gets a suggestion in the spelling it was written in. Normalization turns camelCase keys into git's names, so the rest of Ward only sees `pre-commit`.
+
 All forms are normalized to one internal model (`schema.ts`; fields arrive with their features). The string and array forms become tasks named after their command:
 
 ```ts

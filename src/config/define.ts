@@ -1,6 +1,6 @@
-import type { HookName } from "../hooks/list.ts";
+import type { CamelHookName, HookName } from "../hooks/list.ts";
 
-export type { HookName };
+export type { CamelHookName, HookName };
 
 /** What a function task gets. */
 export type TaskContext = {
@@ -82,8 +82,11 @@ export type HookConfig =
 
 /** Contents of `ward.config.ts`, `ward.yml` or the `"ward"` section of `package.json`. */
 export type Config = {
-  /** Hooks without an entry are a no-op. */
-  hooks?: Readonly<Partial<Record<HookName, HookConfig>>>;
+  /**
+   * Hooks without an entry are a no-op. A hook can be named as in git
+   * (`"pre-commit"`) or in camelCase (`preCommit`), not both.
+   */
+  hooks?: Readonly<Partial<Record<HookName | CamelHookName, HookConfig>>>;
 };
 
 /**
@@ -93,7 +96,7 @@ export type Config = {
  * @example
  * export default defineConfig({
  *   hooks: {
- *     "pre-commit": "npm test",
+ *     preCommit: "npm test",
  *     "commit-msg": "commitlint --edit {1}",
  *   },
  * });

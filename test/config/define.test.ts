@@ -20,6 +20,19 @@ describe("defineConfig", () => {
     defineConfig({ hooks: { "pre-commit": ["a", "b"] as const } });
   });
 
+  it("accepts camelCase hook names", () => {
+    defineConfig({
+      hooks: {
+        preCommit: "npm test",
+        commitMsg: "commitlint --edit {1}",
+        postRewrite: [],
+        sendemailValidate: "true",
+      },
+    });
+    // @ts-expect-error unknown camelCase hook name
+    defineConfig({ hooks: { preComit: "npm test" } });
+  });
+
   it("rejects unknown hooks and options", () => {
     // @ts-expect-error unknown hook name
     defineConfig({ hooks: { "pre-comit": "npm test" } });

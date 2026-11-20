@@ -105,6 +105,21 @@ describe("ward run", () => {
     expect(ward(repo, ["run", "pre-commit"]).stderr).toBe("");
   });
 
+  it("runs a hook named in camelCase", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "package.json",
+      JSON.stringify({
+        ward: { hooks: { preCommit: node("console.log('ran')") } },
+      }),
+    );
+
+    const { status, stdout } = ward(repo, ["run", "pre-commit"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("ran\n");
+  });
+
   it("runs tasks from the repo root, also from a subdirectory", () => {
     using repo = createTempRepo();
     writeHook(repo, [node("console.log(process.cwd())")]);

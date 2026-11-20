@@ -125,7 +125,7 @@ hooks:
 | `["a", "b"]`                          | Run commands in order, stop on first failure  |
 | `{ tasks: { name: { run: "cmd" } } }` | Named tasks, run in the order they are listed |
 
-Any [git hook](https://git-scm.com/docs/githooks) can be used as a key: `pre-commit`, `commit-msg`, `pre-push`, `post-checkout`, `post-merge` and so on.
+Any [git hook](https://git-scm.com/docs/githooks) can be used as a key: `pre-commit`, `commit-msg`, `pre-push`, `post-checkout`, `post-merge` and so on. Hook names can also be written in camelCase, which needs no quotes in `ward.config.ts`: `preCommit`, `commitMsg`, `prePush`. Writing the same hook both ways is an error.
 
 ### How tasks run
 
