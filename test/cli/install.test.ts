@@ -86,6 +86,20 @@ describe("ward (install)", () => {
     expect(hook(repo, "pre-commit")).toContain("bin='node_modules/.bin/ward'");
   });
 
+  // Bun on Windows writes `ward.exe` instead of `ward`; Git's sh finds it.
+  it.runIf(process.platform === "win32")(
+    "finds a ward.exe bin from a workspace package",
+    () => {
+      using repo = createTempRepo();
+      repo.write("packages/a/node_modules/.bin/ward.exe", "");
+
+      expect(ward(repo, [], join(repo.dir, "packages/a")).status).toBe(0);
+      expect(hook(repo, "pre-commit")).toContain(
+        "bin='packages/a/node_modules/.bin/ward'",
+      );
+    },
+  );
+
   it("prefers the package's own bin", () => {
     using repo = createTempRepo();
     repo.write("node_modules/.bin/ward", "");

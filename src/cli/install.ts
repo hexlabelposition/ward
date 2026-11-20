@@ -299,6 +299,18 @@ function isCI(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
+ * Bun on Windows puts a `ward.exe` shim in `.bin` instead of `ward`. The stub
+ * still calls `ward`: Git's sh finds `ward.exe` for it, in `[ -f ]` and when
+ * running it.
+ */
+function binExists(bin: string): boolean {
+  return (
+    existsSync(bin) ||
+    (process.platform === "win32" && existsSync(`${bin}.exe`))
+  );
+}
+
+/**
  * The ward binary, looked up from `cwd` towards the repo root, so `prepare` in a
  * workspace package finds a hoisted root `node_modules` as well as its own.
  * Falls back to `<root>/node_modules/.bin/ward`.
@@ -307,7 +319,7 @@ function findBin(cwd: string, root: string): string {
   let dir = resolve(cwd);
   for (;;) {
     const bin = join(dir, BIN);
-    if (existsSync(bin)) return bin;
+    if (binExists(bin)) return bin;
     if (dir === root || relative(root, dir).startsWith("..")) break;
     const parent = dirname(dir);
     if (parent === dir) break;
