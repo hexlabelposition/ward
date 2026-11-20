@@ -1379,6 +1379,135 @@ describe("ward run --all-files", () => {
   });
 });
 
+describe("ward run --ci", () => {
+  /** a.txt and b.txt committed, a clean tree, and a pre-commit hook. */
+  function ciRepo(hook: string, extra = "") {
+    const repo = createTempRepo();
+    repo.commit("base", {
+      "a.txt": "a\n",
+      "b.txt": "b\n",
+      "ward.yml": `hooks:\n  pre-commit:\n${extra}    tasks:\n      t: { run: ${JSON.stringify(hook)} }\n`,
+    });
+    return repo;
+  }
+
+  function ciRun(repo: TempRepo, flags: string[] = ["--all-files"]) {
+    return ward(repo, ["run", "pre-commit", "--ci", ...flags]);
+  }
+
+  it("passes when the tasks change nothing", () => {
+    using repo = ciRepo(`${node(PRINT_ARGS)} {staged_files}`);
+
+    const { status, stdout, stderr } = ciRun(repo);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("a.txt|b.txt|ward.yml\n");
+    expect(stderr).toBe("");
+  });
+
+  it("fails, shows the diff and restores the files the tasks changed", () => {
+    using repo = ciRepo(`${format()} {staged_files}`);
+
+    const { status, stdout, stderr } = ciRun(repo);
+
+    expect(status).toBe(1);
+    expect(stdout).toContain("-a\n+A\n");
+    expect(stdout).toContain("-b\n+B\n");
+    expect(stderr).toContain(
+      "ward: pre-commit failed: the tasks would change 3 files (shown above, now restored). To apply the fixes, run it without --ci: ward run pre-commit --all-files",
+    );
+    expect(readFileSync(join(repo.dir, "a.txt"), "utf8")).toBe("a\n");
+    expect(repo.git("status", "--porcelain")).toBe("");
+    expect(repo.git("stash", "list")).toBe("");
+  });
+
+  it("names the --from-ref run in the hint", () => {
+    using repo = ciRepo(`${format()} {staged_files}`);
+    repo.git("switch", "--quiet", "-c", "feature");
+    repo.commit("feature", { "c.txt": "c\n" });
+
+    const { status, stderr } = ciRun(repo, ["--from-ref", "main"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "the tasks would change 1 file (shown above, now restored). To apply the fixes, run it without --ci: ward run pre-commit --from-ref main",
+    );
+    expect(repo.git("status", "--porcelain")).toBe("");
+  });
+
+  it("catches changes of commands without file placeholders", () => {
+    using repo = ciRepo(node("require('fs').writeFileSync('b.txt', 'x')"));
+
+    const { status, stdout } = ciRun(repo);
+
+    expect(status).toBe(1);
+    expect(stdout).toContain("+x");
+    expect(readFileSync(join(repo.dir, "b.txt"), "utf8")).toBe("b\n");
+  });
+
+  it("lists and deletes the files the tasks created", () => {
+    using repo = ciRepo(node("require('fs').writeFileSync('gen.txt', 'g')"));
+    repo.write("mine.txt", "untracked before the run\n");
+
+    const { status, stdout, stderr } = ciRun(repo);
+
+    expect(status).toBe(1);
+    expect(stdout).toBe("new file: gen.txt\n");
+    expect(stderr).toContain("the tasks would change 1 file");
+    expect(existsSync(join(repo.dir, "gen.txt"))).toBe(false);
+    expect(existsSync(join(repo.dir, "mine.txt"))).toBe(true);
+  });
+
+  it("fails with the task's exit code and restores the tree", () => {
+    using repo = ciRepo(`${format(3)} {staged_files}`);
+
+    const { status } = ciRun(repo);
+
+    expect(status).toBe(3);
+    expect(repo.git("status", "--porcelain")).toBe("");
+  });
+
+  it("keeps uncommitted changes that were there before the run", () => {
+    using repo = ciRepo(`${format()} {staged_files}`);
+    repo.write("a.txt", "staged\n");
+    repo.git("add", "a.txt");
+    repo.write("b.txt", "unstaged\n");
+
+    const { status } = ciRun(repo);
+
+    expect(status).toBe(1);
+    expect(repo.git("show", ":a.txt")).toBe("staged");
+    expect(readFileSync(join(repo.dir, "a.txt"), "utf8")).toBe("staged\n");
+    expect(readFileSync(join(repo.dir, "b.txt"), "utf8")).toBe("unstaged\n");
+    expect(repo.git("stash", "list")).toBe("");
+  });
+
+  it("restores the tree even when the config turns off backup and revert", () => {
+    using repo = ciRepo(
+      `${format()} {staged_files}`,
+      "    backup: false\n    revert: false\n",
+    );
+
+    const { status } = ciRun(repo);
+
+    expect(status).toBe(1);
+    expect(repo.git("status", "--porcelain")).toBe("");
+  });
+
+  it.each([
+    [["--ci"], "--ci needs the files to check"],
+    [["--ci", "--all-files", "--no-backup"], "--ci always backs up"],
+    [["--ci", "--all-files", "--no-revert"], "--ci always backs up"],
+  ])("rejects %j", (flags, message) => {
+    using repo = ciRepo("true");
+
+    const { status, stderr } = ward(repo, ["run", "pre-commit", ...flags]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(`ward: ${message}`);
+  });
+});
+
 describe("parseRunArgs", () => {
   it("reads Ward's flags right after the hook name", () => {
     expect(parseRunArgs(["pre-commit", "--no-backup", "a", "b"])).toEqual({
@@ -1447,6 +1576,15 @@ describe("parseRunArgs", () => {
       args: [],
       allFiles: true,
       revert: false,
+    });
+  });
+
+  it("reads --ci", () => {
+    expect(parseRunArgs(["pre-commit", "--ci", "--from-ref", "main"])).toEqual({
+      hook: "pre-commit",
+      args: [],
+      ci: true,
+      fromRef: "main",
     });
   });
 

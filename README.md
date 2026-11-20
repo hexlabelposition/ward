@@ -289,16 +289,32 @@ An invalid config fails every hook, not only the broken one: a typo in a hook na
 
 `ward run` flags, given right after the hook name:
 
-| Flag               | Meaning                                                                     |
-| ------------------ | --------------------------------------------------------------------------- |
-| `--no-backup`      | Skip the backup before the run (see [Safety](#safety))                      |
-| `--no-revert`      | Keep the changes of the tasks when the hook fails                           |
-| `--from-ref <ref>` | Run on the files changed since `<ref>` instead of the staged or pushed ones |
-| `--all-files`      | Run on every tracked file instead of the staged or pushed ones              |
+| Flag               | Meaning                                                                       |
+| ------------------ | ----------------------------------------------------------------------------- |
+| `--no-backup`      | Skip the backup before the run (see [Safety](#safety))                        |
+| `--no-revert`      | Keep the changes of the tasks when the hook fails                             |
+| `--from-ref <ref>` | Run on the files changed since `<ref>` instead of the staged or pushed ones   |
+| `--all-files`      | Run on every tracked file instead of the staged or pushed ones                |
+| `--ci`             | Check without keeping fixes: show the diff, restore the tree, fail on changes |
 
 `--from-ref` runs the same config on a branch, for example in a pull request pipeline: `ward run pre-commit --from-ref origin/main`. `{staged_files}`, `{push_files}` and `glob`-only tasks get the files the branch changed since it forked from `<ref>`; uncommitted changes are not included, and fixes are not staged. The ref and the history down to the fork must be in the clone: with `actions/checkout`, set `fetch-depth: 0`.
 
 `--all-files` does the same with every file git tracks, for a full check: `ward run pre-commit --all-files`. Use one of the two flags, not both.
+
+### CI
+
+`--ci` runs the same hooks as a check in a pipeline. The tasks run as usual, but their fixes are not kept: Ward prints the diff of every file they changed and the files they created, puts the tree back as it was and fails when anything changed. A task that fails fails the hook with its own exit code. `--ci` needs `--from-ref` or `--all-files`, since nothing is staged in CI, and it always backs up and restores the tree, whatever `backup` and `revert` say.
+
+```yaml
+# .github/workflows/ci.yml, in a pull request job
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- run: npm ci
+- run: npx ward run pre-commit --ci --from-ref origin/${{ github.base_ref }}
+```
+
+`npm ci` does not install the hooks there (`CI` is set), and the check fails with the command that applies the fixes locally.
 
 `ward` does nothing in CI (when `CI` is set), outside a git repository and when git is not installed, so `npm install` in Docker or CI does not fail.
 

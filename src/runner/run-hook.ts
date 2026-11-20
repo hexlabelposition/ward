@@ -28,6 +28,7 @@ import {
   fileSources,
 } from "./command.ts";
 import { execCommand, execFunction, type Prefixes } from "./exec.ts";
+import { type CiCheck, finishCiCheck, startCiCheck } from "./ci.ts";
 import { changedFiles, type Snapshot, snapshotFiles } from "./fixed.ts";
 import { colorEnv, taskPrefixes } from "./output.ts";
 import { matchFiles } from "./match.ts";
@@ -58,6 +59,12 @@ export type RunHookOptions = {
    * file (`getAllFiles`). Not together with `fromRef`.
    */
   allFiles?: boolean;
+  /**
+   * `--ci`: don't keep what the tasks change. Print the diff, restore the
+   * tree and fail if anything changed. Needs `fromRef` or `allFiles`; backs
+   * up and restores whatever `backup` and `revert` say.
+   */
+  ci?: boolean;
 };
 
 /**
@@ -121,6 +128,12 @@ export type RunHookOptions = {
  * there: fixes are not `git add`ed, no unstaged changes are hidden, the
  * empty-commit check is off and `pre-push` stdin is not read. The backup
  * and revert work as usual.
+ *
+ * With `ci`, the changes of the tasks are not kept: after the tasks, the diff
+ * of every tracked file they changed and the list of files they created are
+ * printed, the index and working tree are put back as they were and the new
+ * files deleted. The hook fails with the exit code of a failed task, or 1
+ * when the tasks changed anything.
  */
 export async function runHook({
   hook,
@@ -134,6 +147,7 @@ export async function runHook({
   revert = true,
   fromRef,
   allFiles = false,
+  ci = false,
 }: RunHookOptions): Promise<number> {
   // The hook's own files (staged, pushed) are replaced for the whole run.
   const replaced = fromRef !== undefined || allFiles;
@@ -249,7 +263,18 @@ export async function runHook({
   // Read before anything else touches the index.
   const stagedBefore =
     hook === "pre-commit" && !replaced && hasStagedChanges(git);
-  const hash = backup ? createBackup(git) : null;
+  // `--ci` restores the tree in any case, so it always needs the backup.
+  const hash = backup || ci ? createBackup(git) : null;
+  let check: CiCheck | undefined;
+  if (ci) {
+    const started = startCiCheck(hash, git);
+    if (typeof started === "string") {
+      if (hash !== null) dropBackup(hash, git);
+      console.error(`ward: ${started}`);
+      return 1;
+    }
+    check = started;
+  }
   // Without a backup there is nothing to revert to.
   const reverting = hash !== null && revert;
   const keep = (hash: string) => {
@@ -275,6 +300,20 @@ export async function runHook({
     if (hidden !== null) restore(hidden, git, false);
     if (hash !== null) keep(hash);
     throw error;
+  }
+
+  if (check !== undefined) {
+    const color = env.GITHUB_ACTIONS === "true" || process.stdout.isTTY;
+    const changed = finishCiCheck(check, git, { color });
+    if (hash !== null) dropBackup(hash, git);
+    if (code !== 0) return code;
+    if (changed === 0) return 0;
+    const files = changed === 1 ? "1 file" : `${String(changed)} files`;
+    const rerun = `ward run ${hook} ${fromRef !== undefined ? `--from-ref ${fromRef}` : "--all-files"}`;
+    console.error(
+      `ward: ${hook} failed: the tasks would change ${files} (shown above, now restored). To apply the fixes, run it without --ci: ${rerun}`,
+    );
+    return 1;
   }
 
   // The index is final here: putting back unstaged changes doesn't touch it.

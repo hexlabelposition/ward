@@ -298,8 +298,11 @@ With `cache: true`, Ward stores content hashes of files that passed a task in `.
 
 `ward run <hook> --ci` uses the same config:
 
-- Files come from `--from-ref <ref>` (diff against the base branch) or `--all-files`.
-- No autofix: tasks run, Ward prints `git diff` of what they changed, restores the tree and fails if anything changed.
+- Files come from `--from-ref <ref>` (diff against the base branch) or `--all-files`; `--ci` without one of them is an error, since nothing is staged in CI and the check would pass on no files.
+- No autofix: tasks run, Ward prints `git diff` of what they changed, restores the tree and fails if anything changed (`runner/ci.ts`).
+  - The base is the hook's backup, made for `--ci` even with `backup: false`, or `HEAD` when the tree is clean and there is nothing to back up. A dirty tree that can't be backed up (unresolved conflicts) is refused rather than reverted to `HEAD`.
+  - The whole tree is compared, not only the tasks' files, so commands without placeholders (`npm run format`) are caught too: tracked files that differ from the base, and untracked files that were not there before (listed and deleted).
+  - The tree is always restored and the backup dropped; `--no-backup` / `--no-revert` with `--ci` are errors. The exit code is that of a failed task, else 1 when anything changed.
 - When `GITHUB_ACTIONS=true`, failures are also printed as `::error file=…,line=…::` annotations.
 
 `ward` (install) stays a no-op when `CI` is set (not `0` / `false`), outside a git working tree, or when git is not installed, so `npm install` in Docker/CI doesn't fail.

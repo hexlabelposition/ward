@@ -22,6 +22,8 @@ export type RunOptions = {
   fromRef?: string;
   /** `--all-files`: every tracked file instead of the staged or pushed ones. */
   allFiles?: boolean;
+  /** `--ci`: check without keeping fixes; fail if the tasks change files. */
+  ci?: boolean;
 };
 
 /** Flags of `ward run` itself, given right after the hook name. */
@@ -30,6 +32,7 @@ const RUN_FLAGS = [
   "--no-revert",
   "--from-ref",
   "--all-files",
+  "--ci",
 ] as const;
 
 /**
@@ -44,6 +47,7 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
   let revert = true;
   let fromRef: string | undefined;
   let allFiles = false;
+  let ci = false;
   let i = 0;
   for (; i < rest.length; i++) {
     const arg = rest[i] ?? "";
@@ -56,6 +60,7 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
     if (flag === "--no-backup") backup = false;
     if (flag === "--no-revert") revert = false;
     if (flag === "--all-files") allFiles = true;
+    if (flag === "--ci") ci = true;
     if (flag === "--from-ref") {
       const value = inline ?? rest[++i];
       // A value starting with `-` would reach git as an option.
@@ -70,6 +75,17 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
   if (fromRef !== undefined && allFiles) {
     throw new Error("use either --from-ref or --all-files, not both");
   }
+  // In CI nothing is staged: `--ci` alone would check no files and pass.
+  if (ci && fromRef === undefined && !allFiles) {
+    throw new Error(
+      "--ci needs the files to check: add --from-ref <ref> or --all-files",
+    );
+  }
+  if (ci && (!backup || !revert)) {
+    throw new Error(
+      "--ci always backs up and restores the tree: drop --no-backup and --no-revert",
+    );
+  }
   return {
     hook,
     args: rest.slice(i),
@@ -77,6 +93,7 @@ export function parseRunArgs(argv: readonly string[]): RunOptions {
     ...(!revert && { revert }),
     ...(fromRef !== undefined && { fromRef }),
     ...(allFiles && { allFiles }),
+    ...(ci && { ci }),
   };
 }
 
@@ -100,7 +117,8 @@ function splitFromRef(arg: string): [string, string?] {
  * the backup when it fails unless it sets `revert: false` or `--no-revert`
  * is given. `--from-ref <ref>` runs the tasks on the files changed since
  * `ref`, and `--all-files` on every tracked file, instead of the staged or
- * pushed ones (`runHook`).
+ * pushed ones (`runHook`). `--ci` checks without keeping fixes and fails
+ * if the tasks change files.
  */
 export async function run({
   hook,
@@ -111,6 +129,7 @@ export async function run({
   revert = true,
   fromRef,
   allFiles = false,
+  ci = false,
 }: RunOptions): Promise<number> {
   if (hook === undefined) {
     console.error("ward run: missing hook name, e.g. `ward run pre-commit`");
@@ -171,5 +190,6 @@ export async function run({
     revert: withRevert,
     ...(fromRef !== undefined && { fromRef }),
     ...(allFiles && { allFiles }),
+    ...(ci && { ci }),
   });
 }

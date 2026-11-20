@@ -240,6 +240,21 @@ function gitPath(name: string, options: GitOptions): string {
  * time is deleted again.
  */
 export function revertToBackup(hash: string, options: GitOptions = {}): void {
+  // The stash commit holds the working tree; its second parent the index.
+  revertTree(hash, `${hash}^2`, options);
+}
+
+/**
+ * Put the tracked files and the index back to `commit`, by the same rules as
+ * `revertToBackup`. For a run that started on a clean tree (index and
+ * working tree matched `HEAD`), where there is no backup to revert to.
+ */
+export function revertToCommit(commit: string, options: GitOptions = {}): void {
+  revertTree(commit, commit, options);
+}
+
+/** `tree`: the commit with the working tree to restore; `index`: with the index. */
+function revertTree(tree: string, index: string, options: GitOptions): void {
   // `<status>` NUL `<path>` NUL; the backup is the old side.
   const fields = git(
     [
@@ -248,7 +263,7 @@ export function revertToBackup(hash: string, options: GitOptions = {}): void {
       "-z",
       "--no-renames",
       "--ignore-submodules",
-      hash,
+      tree,
       "--",
     ],
     options,
@@ -262,7 +277,7 @@ export function revertToBackup(hash: string, options: GitOptions = {}): void {
     (fields[i] === "A" ? added : changed).push(fields[i + 1] ?? "");
   }
   for (const chunk of chunkPaths(changed, MAX_PATHS_LENGTH)) {
-    git(["--literal-pathspecs", "checkout", hash, "--", ...chunk], options);
+    git(["--literal-pathspecs", "checkout", tree, "--", ...chunk], options);
   }
   // In the backup's index but not its working tree: deleted by the user
   // (and checked out for the tasks by `hideUnstagedChanges`).
@@ -276,7 +291,7 @@ export function revertToBackup(hash: string, options: GitOptions = {}): void {
         "-z",
         "--name-only",
         "--full-tree",
-        `${hash}^2`,
+        index,
         "--",
         ...chunk,
       ],
@@ -286,9 +301,9 @@ export function revertToBackup(hash: string, options: GitOptions = {}): void {
       if (path !== "") rmSync(resolve(root, path), { force: true });
     }
   }
-  // The stash's second parent holds the whole index. `reset` with a path
-  // rewrites only the entries that differ, unlike `read-tree`.
-  git(["reset", "--quiet", `${hash}^2`, "--", "."], options);
+  // `reset` with a path rewrites only the entries that differ, unlike
+  // `read-tree`.
+  git(["reset", "--quiet", index, "--", "."], options);
 }
 
 /** Remove the patch of hidden changes once they no longer need to be applied. */
