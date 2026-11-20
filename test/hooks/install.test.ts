@@ -92,10 +92,10 @@ describe("installHooks", () => {
     using repo = createTempRepo();
     const hooksDir = join(repo.dir, ".git", "hooks");
 
-    installHooks(hooksDir, { runtime: "bun" });
+    installHooks(hooksDir, { runtime: "deno" });
 
     expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(
-      renderStub("pre-commit", { runtime: "bun" }),
+      renderStub("pre-commit", { runtime: "deno" }),
     );
   });
 

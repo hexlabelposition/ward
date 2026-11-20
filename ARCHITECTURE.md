@@ -107,12 +107,11 @@ The hooks directory is resolved with `git rev-parse --git-path hooks` - never ha
 # ward:managed v2
 bin=node_modules/.bin/ward        # git runs hooks from the repo root
 [ "$WARD" = "0" ] && exit 0       # after a chained hook, if there is one
+runtime=${WARD_RUNTIME:-node}     # default = runtime that ran install
+[ "$runtime" = deno ] && exec deno run -A npm:@hexlabelposition/ward run pre-commit "$@"
 [ -f "$bin" ] || { echo "ward: $bin not found, skipping" >&2; exit 0; }
-case "${WARD_RUNTIME:-node}" in   # default = runtime that ran install
-  bun)  exec bun "$bin" run pre-commit "$@" ;;
-  deno) exec deno run -A npm:@hexlabelposition/ward run pre-commit "$@" ;;
-  *)    exec "$bin" run pre-commit "$@" ;;
-esac
+[ "$runtime" = bun ] && exec bun "$bin" run pre-commit "$@"
+exec "$bin" run pre-commit "$@"
 ```
 
 Because the config is read on every run, adding/removing hooks in the config needs no reinstall. When the stub format or the active-hooks cache gets out of date (new Ward version, config changed), `ward run` rewrites the stubs itself, so users never have to reinstall by hand.
@@ -121,7 +120,9 @@ Because the config is read on every run, adding/removing hooks in the config nee
 - Calls the local binary directly, not `npx` / `bunx` (much faster startup). The path is relative: git runs hooks from the root of the working tree, so no `git rev-parse` is needed.
 - Missing binary (dependencies not installed yet) → warning and exit 0, so git is not blocked.
 - Each clone writes its own stubs, so team members on different runtimes don't conflict.
-- Bun is started explicitly (`bun "$bin"`): the binary's shebang names `node`, which may not be installed. An unknown `WARD_RUNTIME` or a missing `bun` fails the hook with a hint instead of skipping: the runtime was asked for, so skipping would hide the problem.
+- Bun is started explicitly (`bun "$bin"`): the binary's shebang names `node`, which may not be installed.
+- Deno has no `node_modules/.bin` by default, so its stub runs `npm:@hexlabelposition/ward` and skips the binary check. Deno takes the version from `deno.json` imports or `package.json` and the lockfile; without either it runs the latest version.
+- An unknown `WARD_RUNTIME` or a missing `bun` / `deno` fails the hook with a hint instead of skipping: the runtime was asked for, so skipping would hide the problem.
 
 ### Fast no-op path
 

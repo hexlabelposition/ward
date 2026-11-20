@@ -365,7 +365,7 @@ Then remove `lint-staged` and the `npx lint-staged` call from the `pre-commit` h
 
 `ward` writes a small stub for every git hook into `.git/hooks`. Each stub only calls `ward run <hook>`. The config is read at run time, so changes apply on the next git command, with no reinstall. A hook with no tasks exits right away, before anything else is loaded.
 
-Stubs start Ward on the runtime that ran the install. `bun install` starts `prepare` through the binary's `node` shebang, so hooks run on Node when it is installed and on Bun when it is not. `WARD_RUNTIME=node` or `WARD_RUNTIME=bun` overrides it, for example `WARD_RUNTIME=node git commit`.
+Stubs start Ward on the runtime that ran the install. `bun install` starts `prepare` through the binary's `node` shebang, so hooks run on Node when it is installed and on Bun when it is not. Installed from Deno, hooks run `deno run -A npm:@hexlabelposition/ward`, at the version from `deno.json` or `package.json`. `WARD_RUNTIME=node`, `bun` or `deno` overrides it, for example `WARD_RUNTIME=node git commit`.
 
 `.git/hooks` is not committed, so each clone generates its own stubs through `prepare`. The hooks directory is resolved by git itself, so worktrees and submodules work.
 

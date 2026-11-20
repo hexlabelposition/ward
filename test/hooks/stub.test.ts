@@ -164,6 +164,22 @@ describe("runtime", () => {
     return { ...repo.env, PATH: `${dir}${delimiter}${repo.env.PATH ?? ""}` };
   }
 
+  /** Fake `deno` in its own dir that records its args, then exits with `code`. */
+  function fakeDeno(repo: TempRepo, code = 0): NodeJS.ProcessEnv {
+    const dir = join(repo.dir, ".fake-deno");
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, "deno"),
+      `#!/bin/sh\necho "deno $*" > deno-called.txt\nexit ${String(code)}\n`,
+    );
+    chmodSync(join(dir, "deno"), 0o755);
+    return { ...repo.env, PATH: `${dir}${delimiter}${repo.env.PATH ?? ""}` };
+  }
+
+  function denoCalledWith(repo: TempRepo) {
+    return readFileSync(join(repo.dir, "deno-called.txt"), "utf8").trim();
+  }
+
   function bunCalledWith(repo: TempRepo) {
     return readFileSync(join(repo.dir, "bun-called.txt"), "utf8").trim();
   }
@@ -183,6 +199,77 @@ describe("runtime", () => {
     expect(renderStub("pre-commit", { runtime: "bun" })).toContain(
       '"${WARD_RUNTIME:-bun}"',
     );
+    expect(renderStub("pre-commit", { runtime: "deno" })).toContain(
+      '"${WARD_RUNTIME:-deno}"',
+    );
+  });
+
+  it("runs ward from npm in a deno stub, without node_modules", () => {
+    using repo = createTempRepo();
+    installStub(repo, renderStub("pre-commit", { runtime: "deno" }));
+
+    commit(repo, repo.dir, fakeDeno(repo));
+
+    expect(denoCalledWith(repo)).toBe(
+      "deno run -A npm:@hexlabelposition/ward run pre-commit",
+    );
+  });
+
+  it("propagates the exit code of deno", () => {
+    using repo = createTempRepo();
+    installStub(repo, renderStub("pre-commit", { runtime: "deno" }));
+
+    const { status } = tryCommit(repo, fakeDeno(repo, 3));
+
+    expect(status).not.toBe(0);
+    expect(repo.git("rev-list", "--all", "--count")).toBe("0");
+  });
+
+  it("skips deno with WARD=0", () => {
+    using repo = createTempRepo();
+    installStub(repo, renderStub("pre-commit", { runtime: "deno" }));
+
+    commit(repo, repo.dir, { ...fakeDeno(repo, 3), WARD: "0" });
+
+    expect(existsSync(join(repo.dir, "deno-called.txt"))).toBe(false);
+  });
+
+  it("runs on deno with WARD_RUNTIME=deno in a node stub", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit"));
+
+    commit(repo, repo.dir, { ...fakeDeno(repo), WARD_RUNTIME: "deno" });
+
+    expect(denoCalledWith(repo)).toBe(
+      "deno run -A npm:@hexlabelposition/ward run pre-commit",
+    );
+    expect(existsSync(join(repo.dir, "ward-called.txt"))).toBe(false);
+  });
+
+  it("runs the binary with WARD_RUNTIME=node in a deno stub", () => {
+    using repo = createTempRepo();
+    writeFakeBin(repo, "node_modules/.bin/ward");
+    installStub(repo, renderStub("pre-commit", { runtime: "deno" }));
+
+    commit(repo, repo.dir, { ...fakeDeno(repo), WARD_RUNTIME: "node" });
+
+    expect(calledWith(repo)).toBe("run pre-commit");
+    expect(existsSync(join(repo.dir, "deno-called.txt"))).toBe(false);
+  });
+
+  posixOnly("fails with a hint when deno is not installed", () => {
+    using repo = createTempRepo();
+    repo.write("stub", renderStub("pre-commit", { runtime: "deno" }));
+
+    const { status, stderr } = spawnSync("/bin/sh", ["stub"], {
+      cwd: repo.dir,
+      env: { ...repo.env, PATH: join(repo.dir, "empty") },
+      encoding: "utf8",
+    });
+
+    expect(status).not.toBe(0);
+    expect(stderr).toContain("ward: deno not found in PATH");
   });
 
   it("starts the binary with bun in a bun stub", () => {
@@ -244,7 +331,7 @@ describe("runtime", () => {
 
     expect(status).not.toBe(0);
     expect(stderr).toContain(
-      'ward: unknown WARD_RUNTIME="nodejs", expected node or bun',
+      'ward: unknown WARD_RUNTIME="nodejs", expected node, bun or deno',
     );
     expect(existsSync(join(repo.dir, "ward-called.txt"))).toBe(false);
   });
