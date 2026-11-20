@@ -1,1 +1,2 @@
+# LF on every OS, so Windows checkouts pass prettier and run sh scripts.
 * text=auto eol=lf
