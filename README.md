@@ -11,7 +11,7 @@
 - **Careful with existing hooks** - a hook that is already there (git-lfs, a hand-written script) is never overwritten silently
 - **Clear config errors** - every problem is listed with its place in the config and a suggestion for typos
 
-> ⚠️ Status: early versions. `0.x` releases may change the config and behavior. See [CHANGELOG.md](./CHANGELOG.md) for what changed and [BACKLOG.md](./BACKLOG.md) for what is planned.
+> ⚠️ Status: early versions. `0.x` releases may change the config and behavior. See [GitHub Releases](https://github.com/hexlabelposition/ward/releases) for what changed and [BACKLOG.md](./BACKLOG.md) for what is planned.
 
 ## Install
 
@@ -391,7 +391,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the design and the details of each 
 
 ## Roadmap
 
-Planned versions and items are in [BACKLOG.md](./BACKLOG.md), released changes in [CHANGELOG.md](./CHANGELOG.md).
+Planned versions and items are in [BACKLOG.md](./BACKLOG.md), released changes on [GitHub Releases](https://github.com/hexlabelposition/ward/releases).
 
 ## License
 
