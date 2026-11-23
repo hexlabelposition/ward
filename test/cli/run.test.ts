@@ -6,11 +6,14 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import { parseRunArgs } from "../../src/cli/run.ts";
+import { HOOKS } from "../../src/hooks/list.ts";
+import { renderStub, STUB_VERSION } from "../../src/hooks/stub.ts";
 import { createTempRepo, type TempRepo } from "../helpers/git-repo.ts";
 import { CLI, evalCommand, writeWardBin } from "../helpers/ward-bin.ts";
 
@@ -73,6 +76,8 @@ function conflictingBranches(repo: TempRepo) {
 }
 
 const posixOnly = process.platform === "win32" ? it.skip : it;
+
+const MARKER_CURRENT = `# ward:managed v${String(STUB_VERSION)}`;
 
 /** Prints the stash list, to see a backup while the tasks run. */
 const LIST_STASH_ENTRIES = "git stash list --format=%gs";
@@ -799,6 +804,29 @@ export default { hooks: { "pre-commit": { tasks: { format: {
 
     expect(status).toBe(0);
     expect(stdout).toBe("main\nmine\n");
+  });
+
+  it("updates stubs written by another Ward version", () => {
+    using repo = createTempRepo();
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    const stale = renderStub("pre-commit", { bin: "dist/cli.mjs" }).replace(
+      MARKER_CURRENT,
+      "# ward:managed v1",
+    );
+    writeFileSync(join(hooksDir, "pre-commit"), stale);
+
+    const first = ward(repo, ["run", "pre-commit"]);
+
+    expect(first.status).toBe(0);
+    expect(first.stderr).toBe(
+      "ward: updated the git hook stubs for this Ward version\n",
+    );
+    for (const hook of HOOKS) {
+      expect(readFileSync(join(hooksDir, hook), "utf8")).toBe(
+        renderStub(hook, { bin: "dist/cli.mjs" }),
+      );
+    }
+    expect(ward(repo, ["run", "pre-commit"]).stderr).toBe("");
   });
 
   it('names the package.json section as `package.json "ward"`', () => {
@@ -1749,6 +1777,29 @@ describe("ward run from git", () => {
 
     expect(result.status).toBe(0);
     expect(repo.git("rev-list", "--count", "--merges", "HEAD")).toBe("1");
+  });
+
+  posixOnly("updates stubs from an older Ward on the next commit", () => {
+    using repo = createTempRepo();
+    repo.write("ward.yml", "hooks:\n  pre-commit: exit 0\n");
+    installStubs(repo);
+    const hooksDir = join(repo.dir, ".git", "hooks");
+    const current = readFileSync(join(hooksDir, "pre-commit"), "utf8");
+    for (const hook of HOOKS) {
+      const file = join(hooksDir, hook);
+      writeFileSync(
+        file,
+        readFileSync(file, "utf8").replace(MARKER_CURRENT, "# ward:managed v1"),
+      );
+    }
+
+    const result = commit(repo);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain(
+      "ward: updated the git hook stubs for this Ward version",
+    );
+    expect(readFileSync(join(hooksDir, "pre-commit"), "utf8")).toBe(current);
   });
 
   posixOnly("passes the commit message file as {1}", () => {

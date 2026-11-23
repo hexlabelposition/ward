@@ -10,6 +10,7 @@ import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getStubVersion,
+  readStubOptions,
   isManagedStub,
   renderStub,
   STUB_VERSION,
@@ -373,6 +374,28 @@ describe("getStubVersion", () => {
   ])("returns null for a foreign hook %#", (content) => {
     expect(getStubVersion(content)).toBeNull();
     expect(isManagedStub(content)).toBe(false);
+  });
+});
+
+describe("readStubOptions", () => {
+  it.each([
+    { bin: "node_modules/.bin/ward", runtime: "node" },
+    { bin: "dist/cli.mjs", runtime: "bun" },
+    { bin: "my tools/it's ward", runtime: "deno" },
+  ] as const)("reads back the options of a rendered stub: %j", (options) => {
+    expect(readStubOptions(renderStub("pre-push", options))).toEqual(options);
+  });
+
+  it("reads a v1 stub, which always ran Node", () => {
+    const v1 = "#!/bin/sh\n# ward:managed v1\nbin='node_modules/.bin/ward'\n";
+    expect(readStubOptions(v1)).toEqual({
+      bin: "node_modules/.bin/ward",
+      runtime: "node",
+    });
+  });
+
+  it("returns null without the bin line", () => {
+    expect(readStubOptions("#!/bin/sh\n# ward:managed v9\n")).toBeNull();
   });
 });
 

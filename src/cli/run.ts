@@ -2,6 +2,7 @@ import { readConfig } from "../config/read.ts";
 import { getRepoPaths, type RepoPaths } from "../git/paths.ts";
 import { getGitOperation } from "../git/state.ts";
 import { isHookName } from "../hooks/list.ts";
+import { refreshStaleStubs } from "../hooks/refresh.ts";
 import { isErrnoCode } from "../util/errors.ts";
 
 export type RunOptions = {
@@ -112,6 +113,7 @@ function splitFromRef(arg: string): [string, string?] {
  * output: every hook has a stub, so this is the common case. Otherwise the
  * tasks run in order and the first failure is the exit code.
  * `WARD=0` skips the hook, and so does a merge or rebase in progress.
+ * Stubs written by another Ward version are rewritten first.
  * The index and working tree are backed up before the tasks unless the hook
  * sets `backup: false` or `--no-backup` is given, and the hook goes back to
  * the backup when it fails unless it sets `revert: false` or `--no-revert`
@@ -154,6 +156,12 @@ export async function run({
   if (!paths) {
     console.error("ward: not inside a git working tree");
     return 1;
+  }
+
+  // Before anything that can return early: most hooks have nothing to run.
+  const refreshed = await refreshStaleStubs(paths.hooksDir, hook);
+  if (refreshed.length > 0) {
+    console.error("ward: updated the git hook stubs for this Ward version");
   }
 
   // Commits git makes during a merge or rebase are not the user's working

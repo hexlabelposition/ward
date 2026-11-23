@@ -110,6 +110,38 @@ export function installHooks(
   return result;
 }
 
+/**
+ * Bring the stubs in `hooksDir` up to date after a Ward upgrade or
+ * downgrade: rewrite ward stubs that differ from the current ones and add
+ * missing ones. Foreign hooks and their `.pre-ward` copies are not touched.
+ *
+ * Best effort, since it runs inside a hook: a stub that can't be written
+ * (on Windows, the one git is running may be locked) is skipped and left to
+ * the next run.
+ *
+ * @returns The hooks whose stubs were written.
+ */
+export function refreshHooks(
+  hooksDir: string,
+  options: StubOptions,
+): HookName[] {
+  const written: HookName[] = [];
+  for (const hook of HOOKS) {
+    const file = join(hooksDir, hook);
+    const stub = renderStub(hook, options);
+    try {
+      const current = readExisting(file);
+      if (current.kind === "foreign") continue;
+      if (current.kind === "ward" && current.content === stub) continue;
+      writeStub(file, stub);
+      written.push(hook);
+    } catch (error) {
+      if (!isErrnoCode(error)) throw error;
+    }
+  }
+  return written;
+}
+
 export type UninstallResult = {
   /** Ward stubs that were removed. */
   removed: HookName[];
@@ -195,7 +227,12 @@ function readExisting(file: string): Existing {
 /** Write via a temp file + rename, so git never runs a half-written hook. */
 function writeStub(file: string, stub: string) {
   const tmp = `${file}.ward-tmp`;
-  writeFileSync(tmp, stub, { mode: 0o755 });
-  chmodSync(tmp, 0o755); // `mode` is masked by umask
-  renameSync(tmp, file);
+  try {
+    writeFileSync(tmp, stub, { mode: 0o755 });
+    chmodSync(tmp, 0o755); // `mode` is masked by umask
+    renameSync(tmp, file);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
 }

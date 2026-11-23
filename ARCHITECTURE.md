@@ -59,7 +59,8 @@ src/
 ├─ hooks/
 │  ├─ list.ts      # all supported git hook names
 │  ├─ stub.ts      # stub template + marker
-│  └─ install.ts   # write/remove stubs, detect foreign hooks
+│  ├─ install.ts   # write/remove stubs, detect foreign hooks
+│  └─ refresh.ts   # rewrite stubs of another Ward version from `ward run`
 ├─ runner/
 │  ├─ match.ts     # glob / exclude → files (picomatch), symlink filter
 │  ├─ command.ts   # placeholder expansion, chunking long arg lists
@@ -116,6 +117,8 @@ exec "$bin" run pre-commit "$@"
 ```
 
 Because the config is read on every run, adding/removing hooks in the config needs no reinstall. When the stub format or the active-hooks cache gets out of date (new Ward version, config changed), `ward run` rewrites the stubs itself, so users never have to reinstall by hand.
+
+Stub upgrades (`hooks/refresh.ts`): `ward run` reads the stub of the hook it runs, before the merge / rebase check and the config, since most runs stop there. If its marker names another version than `STUB_VERSION` - older after an upgrade, newer after a downgrade, where a stub may rely on what this version doesn't do - every ward stub is rewritten and missing ones are added, with the `bin` and runtime read back from that stub (v1 stubs have no runtime line: Node). Foreign hooks and `.pre-ward` copies are left alone. Only one stub is read, so the no-op path pays one small file read; the rest is imported when a rewrite is needed. It is best effort: a stub that can't be written is skipped (on Windows, the running one may be locked) and the next run tries again. The config does not affect the stubs yet; with the active-hooks cache (W56) a config change will refresh it the same way.
 
 - `# ward:managed v2` - marker used by `uninstall` and for upgrade detection.
 - Calls the local binary directly, not `npx` / `bunx` (much faster startup). The path is relative: git runs hooks from the root of the working tree, so no `git rev-parse` is needed.

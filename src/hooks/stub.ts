@@ -114,6 +114,20 @@ export function getStubVersion(content: string): number | null {
   return match?.[1] === undefined ? null : Number(match[1]);
 }
 
+/**
+ * The options a ward stub was written with, read back from it, so a stale
+ * stub can be rewritten as install wrote it. `null` when the `bin` line is
+ * not there. Stubs before v2 have no runtime line: they always ran Node.
+ */
+export function readStubOptions(content: string): Required<StubOptions> | null {
+  const bin = /^bin='((?:[^']|'\\'')*)'$/m.exec(content)?.[1];
+  if (bin === undefined) return null;
+  const runtime =
+    /^\s*runtime="\$\{WARD_RUNTIME:-(node|bun|deno)\}"$/m.exec(content)?.[1] ??
+    "node";
+  return { bin: bin.replaceAll(`'\\''`, "'"), runtime: runtime as Runtime };
+}
+
 export function isManagedStub(content: string): boolean {
   return getStubVersion(content) !== null;
 }
