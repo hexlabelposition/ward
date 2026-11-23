@@ -118,6 +118,37 @@ hooks:
     - npm test
 ```
 
+### Editor autocomplete
+
+`ward.config.ts` gets types and autocomplete from `defineConfig`. For `ward.yml` and the `"ward"` section of `package.json`, Ward ships a JSON Schema that completes hook names and options and marks unknown ones.
+
+In `ward.yml`, point the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) at it with a comment on the first line:
+
+```yaml
+# yaml-language-server: $schema=./node_modules/@hexlabelposition/ward/schema.json
+hooks:
+  pre-commit: npm run lint
+```
+
+Without `node_modules` (Deno), use `https://unpkg.com/@hexlabelposition/ward/schema.json`.
+
+For `package.json` in VS Code, add the schema in `.vscode/settings.json`. It is applied next to the usual `package.json` schema and only describes the `"ward"` key:
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["package.json"],
+      "url": "./node_modules/@hexlabelposition/ward/package.schema.json"
+    }
+  ]
+}
+```
+
+In JetBrains IDEs, map `schema.json` to `ward.yml` in Settings | Languages & Frameworks | Schemas and DTDs | JSON Schema Mappings.
+
+The schema checks the shape of the config. Rules that depend on the hook, such as `{push_files}` outside `pre-push`, and pattern syntax are checked by Ward when a hook runs (see [Config errors](#config-errors)).
+
 ### Hook value forms
 
 | Form                                  | Meaning                                       |

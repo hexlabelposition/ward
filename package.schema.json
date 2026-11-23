@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ward config in package.json \"ward\"",
+  "type": "object",
+  "properties": {
+    "ward": {
+      "description": "Ward config: git hooks and the tasks they run. https://github.com/hexlabelposition/ward#configuration",
+      "allOf": [
+        {
+          "$ref": "./schema.json"
+        }
+      ]
+    }
+  }
+}

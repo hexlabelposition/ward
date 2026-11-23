@@ -48,6 +48,7 @@ src/
 │  ├─ local.ts     # merge ward.local.*
 │  ├─ extends.ts   # resolve extends: built-in presets, local paths, npm packages
 │  ├─ schema.ts    # validation + normalization to internal model
+│  ├─ json-schema.ts # JSON Schema for editors, written to schema.json (not loaded at run time)
 │  └─ define.ts    # defineConfig() + public types
 ├─ git/
 │  ├─ exec.ts      # thin wrapper around `git` child process
@@ -156,7 +157,9 @@ Merge order: `extends` packages (in listed order) → repo config → `ward.loca
 
 Function tasks and the task graph (`dependsOn`, `root`) are only available in the TS config; YAML and `package.json` hold plain data. The docs must say this explicitly.
 
-`defineConfig` gives types and autocomplete; `schema.ts` validates every source at load time with clear errors (unknown hook, unknown option, bad glob). It lists every problem with its path in the config (`hooks.pre-push[1]`) and suggests close names; options from later versions fail as "not supported yet" instead of being ignored. A JSON Schema covers YAML and `package.json`.
+`defineConfig` gives types and autocomplete; `schema.ts` validates every source at load time with clear errors (unknown hook, unknown option, bad glob). It lists every problem with its path in the config (`hooks.pre-push[1]`) and suggests close names; options from later versions fail as "not supported yet" instead of being ignored. A JSON Schema covers YAML and `package.json` for editor autocomplete.
+
+The JSON Schema is built by `config/json-schema.ts` from `HOOKS` and written by `bun run schema` to `schema.json` (the config object, for `ward.yml`) and `package.schema.json` (only a `"ward"` property pointing at `schema.json`, for editors that combine it with the regular `package.json` schema). Both files are committed and published in the package; a test fails when they are out of date or their options differ from the ones `schema.ts` accepts. The schema covers shape only: hook names in both spellings, value forms, options, types, non-empty commands and pattern lists. Rules that depend on the hook and glob syntax stay in `schema.ts`, so the schema never rejects a config Ward accepts. Draft-07, since that is what the VS Code JSON and YAML language servers support best.
 
 Hook keys are git's names (`pre-commit`) or their camelCase spelling (`preCommit`), in every format; the same hook in both spellings is an error, and a typo gets a suggestion in the spelling it was written in. Normalization turns camelCase keys into git's names, so the rest of Ward only sees `pre-commit`.
 

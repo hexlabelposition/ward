@@ -53,7 +53,8 @@ const PLANNED = {
   task: ["root", "tags", "cache", "dependsOn"],
 } as const;
 
-const KNOWN = {
+/** Options each level accepts; `json-schema.ts` must list the same. */
+export const KNOWN = {
   config: ["hooks"],
   hook: ["tasks", "parallel", "backup", "revert"],
   task: ["run", "glob", "exclude", "symlinks", "stageFixed"],

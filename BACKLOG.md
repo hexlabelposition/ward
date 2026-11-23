@@ -128,7 +128,7 @@ Done when: a PR pipeline runs `ward run pre-commit --ci --from-ref origin/main` 
 
 ### Config
 
-- [ ] **W46** JSON Schema for `ward.yml` and the `package.json` section (editor autocomplete)
+- [x] **W46** JSON Schema for `ward.yml` and the `package.json` section (editor autocomplete)
 - [ ] **W71** `ward.local.*` override merged on top of the main config
 - [ ] **W73** Rewrite stale stubs automatically when the config or stub version changes
 - [ ] **W72** `extends`: built-in presets (`ward:<name>` / config object), local paths, npm packages

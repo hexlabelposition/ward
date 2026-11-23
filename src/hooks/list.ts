@@ -37,7 +37,8 @@ type CamelCase<S extends string> = S extends `${infer Head}-${infer Tail}`
 /** The camelCase spelling the config accepts next to the git name: `preCommit`. */
 export type CamelHookName = CamelCase<HookName>;
 
-function toCamel(hook: HookName): CamelHookName {
+/** `pre-commit` → `preCommit`. */
+export function toCamel(hook: HookName): CamelHookName {
   return hook.replace(/-(\w)/g, (_, char: string) =>
     char.toUpperCase(),
   ) as CamelHookName;
