@@ -71,7 +71,7 @@ Ward looks for the config in the repo root, in this order:
 2. `ward.yml` / `ward.yaml`
 3. `"ward"` section in `package.json`
 
-If more than one is found, Ward stops with an error instead of silently picking one. Without a config every hook does nothing. Personal changes that should not be committed go in `ward.local.*` (see [Local overrides](#local-overrides)).
+If more than one is found, Ward stops with an error instead of silently picking one. Without a config every hook does nothing. A config can build on shared ones with `extends` (see [Shared configs](#shared-configs)), and personal changes that should not be committed go in `ward.local.*` (see [Local overrides](#local-overrides)).
 
 ### TypeScript
 
@@ -287,6 +287,58 @@ Untracked files are not touched. Binary files, renames, deletions and symlinks a
 | `revert`    | `--no-revert` | `false` keeps the changes of the tasks after a failure, for inspection |
 
 The flags are for `ward run`, right after the hook name: `ward run pre-commit --no-revert`.
+
+## Shared configs
+
+`extends` merges other configs under this one: a team-wide config from an npm package, or a base file next to it.
+
+```yaml
+# ward.yml
+extends:
+  - "@company/ward-config"
+  - ./ward.base.yml
+hooks:
+  pre-commit:
+    tasks:
+      eslint:
+        glob: "src/**/*.ts" # change one option of an extended task
+      prettier: null # drop an extended task
+```
+
+The entries are merged in order, then this config on top, then `ward.local.*`, with the same rules as [local overrides](#local-overrides): hooks and tasks are matched by name, a command or a list replaces a hook, `null` removes a hook or task.
+
+| Entry               | What is loaded                                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `./path`, `../path` | A `.yml`, `.yaml`, `.json`, `.ts` or `.js` file, relative to the config that lists it                                            |
+| `package`           | `ward.yml` / `ward.yaml` in the package root, else the default export of the package's module (`exports` or `main`)              |
+| `package/sub`       | The subpath the package exports (`exports["./sub"]`), or the file `sub` in a package without `exports`, such as `cfg/strict.yml` |
+| Config object       | Used as is, for `ward.config.ts`                                                                                                 |
+
+- Packages are found in `node_modules`, from the directory of the config that lists them upwards, as Node does. Install a shared config as a dev dependency: the lockfile pins its version. On Deno, set `"nodeModulesDir": "auto"` in `deno.json` so the package has a `node_modules` folder.
+- An extended config can have its own `extends`. A cycle is an error.
+- Each config is checked on its own first; problems that only show up after the merge, such as a task without `run`, name every config that went into it: `@company/ward-config + ward.yml is invalid`.
+- `ward.local.*` can't have `extends`.
+- Built-in presets (`ward:<name>`) are not available yet.
+
+A shared config package needs nothing but a `ward.yml` in its root, or a module whose default export is the config:
+
+```js
+// index.js of @company/ward-config
+export default {
+  hooks: {
+    "pre-commit": {
+      tasks: {
+        eslint: { run: "npx eslint --fix {staged_files}", glob: "*.{js,ts}" },
+        prettier: {
+          run: "npx prettier --write --ignore-unknown {staged_files}",
+        },
+      },
+    },
+  },
+};
+```
+
+Node does not strip types inside `node_modules`, so publish JavaScript or YAML, not `.ts`. In `ward.config.ts`, `defineConfig` with `extends` accepts partial tasks and `null`, as in the YAML above.
 
 ## Local overrides
 

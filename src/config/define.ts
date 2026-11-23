@@ -84,11 +84,30 @@ export type HookConfig =
 
 /** Contents of `ward.config.ts`, `ward.yml` or the `"ward"` section of `package.json`. */
 export type Config = {
+  /** Configs this one is merged onto: see `ExtendingConfig`. */
+  extends?: Extends;
   /**
    * Hooks without an entry are a no-op. A hook can be named as in git
    * (`"pre-commit"`) or in camelCase (`preCommit`), not both.
    */
   hooks?: Readonly<Partial<Record<HookName | CamelHookName, HookConfig>>>;
+};
+
+/**
+ * Configs to merge onto, in order: a path relative to the config
+ * (`./ward.base.yml`), an npm package (`@company/ward-config`) or a config
+ * object.
+ */
+export type Extends = string | readonly (string | Config | ExtendingConfig)[];
+
+/**
+ * A config with `extends`: its hooks are merged onto the extended ones as
+ * in `ward.local.*` (`LocalHookConfig`), so a task can change one option
+ * and `null` removes a hook or task.
+ */
+export type ExtendingConfig = {
+  extends: Extends;
+  hooks?: LocalConfig["hooks"];
 };
 
 /**
@@ -103,7 +122,11 @@ export type Config = {
  *   },
  * });
  */
-export function defineConfig(config: Config): Config {
+export function defineConfig(config: Config): Config;
+export function defineConfig(config: ExtendingConfig): ExtendingConfig;
+export function defineConfig(
+  config: Config | ExtendingConfig,
+): Config | ExtendingConfig {
   return config;
 }
 

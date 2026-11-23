@@ -3,7 +3,7 @@ import { ConfigError } from "../../src/config/errors.ts";
 import {
   normalizeConfig,
   validateConfig,
-  validateLocalConfig,
+  validateLayer,
 } from "../../src/config/schema.ts";
 
 /** The problems listed in the error, without the "is invalid" header. */
@@ -129,8 +129,28 @@ describe("validateConfig", () => {
         },
       }),
     ).toEqual([
-      "extends: not supported yet",
+      "extends[0]: built-in presets are not supported yet",
       "hooks.pre-commit.tasks.lint.cache: not supported yet",
+    ]);
+  });
+
+  it("accepts `extends` as one entry or a list of paths, packages and objects", () => {
+    expect(issues({ extends: "./base.yml" })).toEqual([]);
+    expect(
+      issues({ extends: ["@company/ward-config", "../shared/ward.yml", {}] }),
+    ).toEqual([]);
+  });
+
+  it("checks the form of `extends` entries", () => {
+    const absolute =
+      process.platform === "win32" ? "C:\\ward.yml" : "/ward.yml";
+    expect(issues({ extends: ["", 1, absolute] })).toEqual([
+      "extends[0]: entry is empty",
+      "extends[1]: expected a path, a package name or a config object, got a number",
+      "extends[2]: use a path relative to this config, starting with `./`",
+    ]);
+    expect(issues({ extends: true })).toEqual([
+      "extends: expected a config to extend or a list of them, got a boolean",
     ]);
   });
 
@@ -483,10 +503,10 @@ describe("normalizeConfig", () => {
   });
 });
 
-describe("validateLocalConfig", () => {
+describe("validateLayer", () => {
   function localIssues(raw: unknown): string[] {
     try {
-      validateLocalConfig(raw, "ward.local.yml");
+      validateLayer(raw, "ward.local.yml", { local: true });
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
       return error.message
@@ -525,6 +545,12 @@ describe("validateLocalConfig", () => {
       'hooks.pre-commit.paralel: unknown option. Did you mean "parallel"?',
       "hooks.pre-commit.tasks.t.glob: list of patterns is empty",
       "hooks.pre-push: command is empty",
+    ]);
+  });
+
+  it("rejects `extends` in a local config", () => {
+    expect(localIssues({ extends: "./base.yml" })).toEqual([
+      "extends: not supported in a local config: add it to the main config",
     ]);
   });
 

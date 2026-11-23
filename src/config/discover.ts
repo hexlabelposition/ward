@@ -72,7 +72,7 @@ function discoverOne(
   return source ? { format: source.format, file: source.file } : null;
 }
 
-function isFile(file: string): boolean {
+export function isFile(file: string): boolean {
   try {
     return statSync(file).isFile();
   } catch (error) {

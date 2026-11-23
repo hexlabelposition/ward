@@ -131,7 +131,7 @@ Done when: a PR pipeline runs `ward run pre-commit --ci --from-ref origin/main` 
 - [x] **W46** JSON Schema for `ward.yml` and the `package.json` section (editor autocomplete)
 - [x] **W71** `ward.local.*` override merged on top of the main config
 - [x] **W73** Rewrite stale stubs automatically when the config or stub version changes
-- [ ] **W72** `extends`: built-in presets (`ward:<name>` / config object), local paths, npm packages
+- [x] **W72** `extends`: built-in presets (`ward:<name>` / config object), local paths, npm packages
 - [ ] **W78** Docs: function tasks and task graph are TS config only
 - [x] **W88** camelCase hook names (`preCommit`) next to git's names, in every config format
 

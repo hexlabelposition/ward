@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import {
   CAMEL_HOOKS,
   HOOKS,
@@ -53,14 +54,14 @@ export type ResolvedConfig = {
  * instead of "unknown option", since users will copy them from the docs.
  */
 const PLANNED = {
-  config: ["extends"],
+  config: [],
   hook: [],
   task: ["root", "tags", "cache", "dependsOn"],
 } as const;
 
 /** Options each level accepts; `json-schema.ts` must list the same. */
 export const KNOWN = {
-  config: ["hooks"],
+  config: ["extends", "hooks"],
   hook: ["tasks", "parallel", "backup", "revert"],
   task: ["run", "glob", "exclude", "symlinks", "stageFixed"],
 } as const;
@@ -73,28 +74,43 @@ export const KNOWN = {
  * @throws ConfigError listing each problem with its path in the config.
  */
 export function validateConfig(raw: unknown, name: string): Config {
-  check(raw, name, false);
+  check(raw, name, { partial: false, local: false });
   return raw as Config;
 }
 
+/** A config checked by `validateLayer`: merged onto others before use. */
+export type ConfigLayer = LocalConfig & Pick<Config, "extends">;
+
 /**
- * Check `ward.local.*` on its own, before it is merged: the same rules,
- * except that hooks and tasks may be `null` (removed), a `{ tasks }` hook
- * may leave out `tasks` and a task may leave out `run`. The merged config
- * goes through `validateConfig` after that.
+ * Check one config that is merged onto others (`extends` entries, a config
+ * with `extends`, `ward.local.*`) on its own: the same rules, except that
+ * hooks and tasks may be `null` (removed), a `{ tasks }` hook may leave out
+ * `tasks` and a task may leave out `run`. The merged config goes through
+ * `validateConfig` after that.
  *
+ * @param local `ward.local.*`, which can't have `extends`.
  * @throws ConfigError listing each problem with its path in the config.
  */
-export function validateLocalConfig(raw: unknown, name: string): LocalConfig {
-  check(raw, name, true);
-  return raw as LocalConfig;
+export function validateLayer(
+  raw: unknown,
+  name: string,
+  { local = false } = {},
+): ConfigLayer {
+  check(raw, name, { partial: true, local });
+  return raw as ConfigLayer;
 }
 
-function check(raw: unknown, name: string, local: boolean): void {
+function check(
+  raw: unknown,
+  name: string,
+  mode: { partial: boolean; local: boolean },
+): void {
   const issues: string[] = [];
-  const report: Report = (path, message) =>
-    issues.push(path ? `${path}: ${message}` : message);
-  report.local = local;
+  const report: Report = Object.assign(
+    (path: string, message: string) =>
+      issues.push(path ? `${path}: ${message}` : message),
+    mode,
+  );
 
   checkConfig(raw, report);
 
@@ -105,8 +121,14 @@ function check(raw: unknown, name: string, local: boolean): void {
   }
 }
 
-/** Collects a problem; `local` is set while checking `ward.local.*`. */
-type Report = ((path: string, message: string) => void) & { local?: boolean };
+/**
+ * Collects a problem. `partial`: the config is merged onto others
+ * (`validateLayer`); `local`: it is `ward.local.*`.
+ */
+type Report = ((path: string, message: string) => void) & {
+  partial: boolean;
+  local: boolean;
+};
 
 function checkConfig(raw: unknown, report: Report): void {
   if (!isObject(raw)) {
@@ -116,6 +138,17 @@ function checkConfig(raw: unknown, report: Report): void {
 
   for (const key of Object.keys(raw)) {
     if (key === "hooks") continue;
+    if (key === "extends") {
+      if (report.local) {
+        report(
+          key,
+          "not supported in a local config: add it to the main config",
+        );
+      } else {
+        checkExtends(raw.extends, report);
+      }
+      continue;
+    }
     if (resolveHookName(key)) {
       report(key, "hooks go under `hooks:`, e.g. `hooks: { " + key + ": … }`");
     } else {
@@ -145,7 +178,7 @@ function checkConfig(raw: unknown, report: Report): void {
       continue;
     }
     seen.set(hook, key);
-    if (value === null && report.local) continue;
+    if (value === null && report.partial) continue;
     checkHook(value, hook, path, report);
   }
 }
@@ -188,7 +221,7 @@ function checkHook(
     }
   }
   if (!Object.hasOwn(value, "tasks")) {
-    if (!report.local) report(path, "missing `tasks`");
+    if (!report.partial) report(path, "missing `tasks`");
     return;
   }
   const tasks = value.tasks;
@@ -203,7 +236,7 @@ function checkHook(
   for (const [name, task] of Object.entries(tasks)) {
     const taskPath = join(tasksPath, name);
     if (name.trim() === "") report(taskPath, "task name is empty");
-    if (task === null && report.local) continue;
+    if (task === null && report.partial) continue;
     checkTask(task, hook, taskPath, report);
   }
 }
@@ -237,7 +270,7 @@ function checkTask(
     }
   }
   if (!Object.hasOwn(task, "run")) {
-    if (!report.local) report(path, "missing `run`");
+    if (!report.partial) report(path, "missing `run`");
     return;
   }
   const filtered =
@@ -265,6 +298,41 @@ function checkTask(
       path,
       "`glob` and `exclude` need `{staged_files}`, `{push_files}` or `{all_files}` in `run` outside `pre-commit` and `pre-push`",
     );
+  }
+}
+
+/**
+ * `extends`: one entry or a list. Entries are checked for their form here;
+ * what they point at is loaded and checked by `extends.ts`.
+ */
+function checkExtends(value: unknown, report: Report): void {
+  if (typeof value === "string") {
+    checkExtendsEntry(value, "extends", report);
+  } else if (Array.isArray(value)) {
+    value.forEach((entry: unknown, i) => {
+      checkExtendsEntry(entry, `extends[${String(i)}]`, report);
+    });
+  } else {
+    report(
+      "extends",
+      `expected a config to extend or a list of them, got ${describe(value)}`,
+    );
+  }
+}
+
+function checkExtendsEntry(entry: unknown, path: string, report: Report): void {
+  if (isObject(entry)) return;
+  if (typeof entry !== "string") {
+    report(
+      path,
+      `expected a path, a package name or a config object, got ${describe(entry)}`,
+    );
+  } else if (entry.trim() === "") {
+    report(path, "entry is empty");
+  } else if (entry.startsWith("ward:")) {
+    report(path, "built-in presets are not supported yet");
+  } else if (isAbsolute(entry)) {
+    report(path, "use a path relative to this config, starting with `./`");
   }
 }
 

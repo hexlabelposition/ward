@@ -45,8 +45,8 @@ src/
 │  ├─ load-ts.ts   # native import() with Node type stripping
 │  ├─ load-yml.ts  # load YAML (yaml package)
 │  ├─ load-pkg.ts  # "ward" section of package.json
-│  ├─ local.ts     # merge ward.local.*
-│  ├─ extends.ts   # resolve extends: built-in presets, local paths, npm packages
+│  ├─ extends.ts   # resolve extends into layers: local paths, npm packages, config objects
+│  ├─ merge.ts     # merge layers: extends → config → ward.local.*
 │  ├─ schema.ts    # validation + normalization to internal model
 │  ├─ json-schema.ts # JSON Schema for editors, written to schema.json (not loaded at run time)
 │  └─ define.ts    # defineConfig() + public types
@@ -158,7 +158,7 @@ Discovery order: `ward.config.ts` → `ward.yml` / `ward.yaml` → `package.json
 
 Merge order: `extends` packages (in listed order) → repo config → `ward.local.*`.
 
-`ward.local.ts` → `ward.local.{yml,yaml}` is discovered the same way (several → error) and works without a main config. Each file is validated on its own; the local one in a partial mode where hooks and tasks may be `null` and `tasks` / `run` may be left out (`validateLocalConfig`). `local.ts` then merges the raw configs: hooks by the hook they name (the result uses git's names), a local command or list replaces the hook, `null` removes it, and a local `{ tasks }` onto a main `{ tasks }` overrides the hook options and merges tasks by name - options key by key, existing tasks keep their place, new ones go last. A `null` for a hook or task the main config lacks is an error (likely a typo). The merged config goes through `validateConfig` again, named `ward.yml + ward.local.yml`, which reports what only shows up after the merge: a new task without `run`, a local `glob` on a task without file placeholders. Merging the raw data, not the normalized model, keeps one set of checks for every source.
+`ward.local.ts` → `ward.local.{yml,yaml}` is discovered the same way (several → error) and works without a main config. Each file is validated on its own; the local one in a partial mode where hooks and tasks may be `null` and `tasks` / `run` may be left out (`validateLayer`). `merge.ts` then merges the raw configs (the same code merges `extends` layers): hooks by the hook they name (the result uses git's names), a local command or list replaces the hook, `null` removes it, and a local `{ tasks }` onto a main `{ tasks }` overrides the hook options and merges tasks by name - options key by key, existing tasks keep their place, new ones go last. A `null` for a hook or task the configs before it lack is an error (likely a typo), naming those configs. The merged config goes through `validateConfig` again, named `ward.yml + ward.local.yml`, which reports what only shows up after the merge: a new task without `run`, a local `glob` on a task without file placeholders. Merging the raw data, not the normalized model, keeps one set of checks for every source.
 
 Function tasks and the task graph (`dependsOn`, `root`) are only available in the TS config; YAML and `package.json` hold plain data. The docs must say this explicitly.
 
@@ -194,18 +194,25 @@ type Task = {
 
 ### Presets and shared configs (`extends`)
 
-`extends` is a list; entries are merged in order, then the repo config, then `ward.local.*`. Each entry is one of:
+`extends` is one entry or a list; entries are merged in order, then the repo config, then `ward.local.*`. Each entry is one of:
 
-| Entry         | Resolved as                                                                                                                         |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `ward:<name>` | Built-in preset from `src/presets/`                                                                                                 |
-| Config object | Used as is (TS config: `import { ts } from "@hexlabelposition/ward/presets"`)                                                       |
-| `./…`, `../…` | Local config file, relative to the config that lists it                                                                             |
-| Package name  | npm package resolved from the repo root via `import.meta.resolve`; default export (config object) or `ward.yml` in the package root |
+| Entry         | Resolved as                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ward:<name>` | Built-in preset from `src/presets/` (W63; "not supported yet" until then)                                                                                                       |
+| Config object | Used as is (TS config: `import { ts } from "@hexlabelposition/ward/presets"`)                                                                                                   |
+| `./…`, `../…` | Local config file, relative to the config that lists it; loader by extension (`.yml`/`.yaml`, `.json`, `.ts`/`.js`)                                                             |
+| Package name  | npm package in `node_modules`, searched from the listing config's real directory upwards; `ward.yml` / `ward.yaml` in the package root, else the module from `exports` / `main` |
+| `package/sub` | `exports["./sub"]`, or the file `sub` in a package without `exports`                                                                                                            |
+
+`extends.ts` turns the config and everything it extends into a flat list of layers, depth first: an entry's own `extends` come before it. Every layer is validated on its own in partial mode (`validateLayer`: `null` and partial hooks / tasks allowed, since the layers below may have the rest), then `merge.ts` merges them with the same rules as `ward.local.*`, and the result is validated once more in full, named after every layer (`@company/ward-config + ward.yml + ward.local.yml`). A config without `extends` and without a local file skips this and is validated in one pass, so all of its problems show at once. Cycles are detected by file (or object) and reported as the chain. `ward.local.*` can't have `extends`, so the layer order stays simple.
+
+Packages are resolved by hand instead of `import.meta.resolve`: resolving from the user's repo, not from Ward's own location, needs the `parent` argument, which Node only has behind a flag. The resolver walks up `node_modules` like Node, starting from the real path of the listing file, so pnpm's links find a package's own dependencies, and reads `exports` with the conditions `import()` matches (`import`, `node`, `default`, the runtime's name), exact subpaths only. Node can't strip types under `node_modules`, so config packages ship JS or YAML. Deno without a `node_modules` folder can't resolve packages: the error suggests `"nodeModulesDir": "auto"`.
+
+In `ward.config.ts`, `defineConfig` has an overload for a config with `extends` (`ExtendingConfig`), whose hooks are typed like a local config's, so partial overrides type-check.
 
 **Presets live in the main package**, not in separate `ward-preset-*` packages: a preset is a few lines of config, so it adds almost nothing to package size, needs no extra install, and its version always matches Ward's. The trade-off - a preset change needs a Ward release - is fine for presets.
 
-**Shared company configs** can't ship with Ward, so they come from a local path or an npm package. npm is preferred over a git URL: the version is pinned by the lockfile, runs are offline, private configs use the usual registry auth, the same resolution works on Node, Bun and Deno (`npm:` specifiers), and nothing is downloaded and executed behind the lockfile's back. Git-hosted configs may come later, YAML only.
+**Shared company configs** can't ship with Ward, so they come from a local path or an npm package. npm is preferred over a git URL: the version is pinned by the lockfile, runs are offline, private configs use the usual registry auth, the same resolution works on Node, Bun and Deno (with a `node_modules` folder), and nothing is downloaded and executed behind the lockfile's back. Git-hosted configs may come later, YAML only.
 
 ### File sources
 

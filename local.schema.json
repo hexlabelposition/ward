@@ -6,13 +6,28 @@
   "properties": {
     "hooks": {
       "description": "Hooks to change, add or remove (`null`). A command or a list replaces the hook, `{ tasks }` is merged into it by task name.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/hooksLayer"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "command": {
+      "description": "Shell command, run from the repo root. `{1}`, `{2}` … are git hook arguments; `{staged_files}`, `{push_files}` (`pre-push` only) and `{all_files}` are files.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "hooksLayer": {
       "type": "object",
       "properties": {
         "applypatch-msg": {
           "description": "`git am`, before a patch is applied. `{1}` is the file with the proposed commit message.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -20,7 +35,7 @@
           "description": "`git am`, before a patch is applied. `{1}` is the file with the proposed commit message. Same as `applypatch-msg`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -28,7 +43,7 @@
           "description": "`git am`, after a patch is applied and before it is committed.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -36,7 +51,7 @@
           "description": "`git am`, after a patch is applied and before it is committed. Same as `pre-applypatch`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -44,7 +59,7 @@
           "description": "`git am`, after a patch is committed.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -52,7 +67,7 @@
           "description": "`git am`, after a patch is committed. Same as `post-applypatch`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -60,7 +75,7 @@
           "description": "`git commit`, before the commit message is asked for. Tasks get the staged files.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -68,7 +83,7 @@
           "description": "`git commit`, before the commit message is asked for. Tasks get the staged files. Same as `pre-commit`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -76,7 +91,7 @@
           "description": "`git merge`, before a merge commit is created.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -84,7 +99,7 @@
           "description": "`git merge`, before a merge commit is created. Same as `pre-merge-commit`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -92,7 +107,7 @@
           "description": "`git commit`, before the message editor opens. `{1}` is the message file, `{2}` the message source.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -100,7 +115,7 @@
           "description": "`git commit`, before the message editor opens. `{1}` is the message file, `{2}` the message source. Same as `prepare-commit-msg`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -108,7 +123,7 @@
           "description": "`git commit`, after the message is written. `{1}` is the message file.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -116,7 +131,7 @@
           "description": "`git commit`, after the message is written. `{1}` is the message file. Same as `commit-msg`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -124,7 +139,7 @@
           "description": "`git commit`, after the commit is created.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -132,7 +147,7 @@
           "description": "`git commit`, after the commit is created. Same as `post-commit`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -140,7 +155,7 @@
           "description": "`git rebase`, before it starts. `{1}` is the upstream.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -148,7 +163,7 @@
           "description": "`git rebase`, before it starts. `{1}` is the upstream. Same as `pre-rebase`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -156,7 +171,7 @@
           "description": "`git checkout` / `git switch`, after the worktree is updated. `{1}` previous HEAD, `{2}` new HEAD, `{3}` 1 for a branch checkout.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -164,7 +179,7 @@
           "description": "`git checkout` / `git switch`, after the worktree is updated. `{1}` previous HEAD, `{2}` new HEAD, `{3}` 1 for a branch checkout. Same as `post-checkout`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -172,7 +187,7 @@
           "description": "`git merge` / `git pull`, after a merge.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -180,7 +195,7 @@
           "description": "`git merge` / `git pull`, after a merge. Same as `post-merge`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -188,7 +203,7 @@
           "description": "`git push`, before anything is pushed. Tasks get the files of the pushed commits. `{1}` remote name, `{2}` URL.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -196,7 +211,7 @@
           "description": "`git push`, before anything is pushed. Tasks get the files of the pushed commits. `{1}` remote name, `{2}` URL. Same as `pre-push`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -204,7 +219,7 @@
           "description": "`git gc --auto`, before it runs.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -212,7 +227,7 @@
           "description": "`git gc --auto`, before it runs. Same as `pre-auto-gc`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -220,7 +235,7 @@
           "description": "`git commit --amend` / `git rebase`, after commits are rewritten. `{1}` is the command.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -228,7 +243,7 @@
           "description": "`git commit --amend` / `git rebase`, after commits are rewritten. `{1}` is the command. Same as `post-rewrite`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -236,7 +251,7 @@
           "description": "`git send-email`, for each patch. `{1}` is the patch file.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         },
@@ -244,7 +259,7 @@
           "description": "`git send-email`, for each patch. `{1}` is the patch file. Same as `sendemail-validate`.",
           "allOf": [
             {
-              "$ref": "#/definitions/hook"
+              "$ref": "#/definitions/hookLayer"
             }
           ]
         }
@@ -327,16 +342,8 @@
           }
         }
       }
-    }
-  },
-  "additionalProperties": false,
-  "definitions": {
-    "command": {
-      "description": "Shell command, run from the repo root. `{1}`, `{2}` … are git hook arguments; `{staged_files}`, `{push_files}` (`pre-push` only) and `{all_files}` are files.",
-      "type": "string",
-      "pattern": "\\S"
     },
-    "hook": {
+    "hookLayer": {
       "description": "What the hook runs: one command, a list of commands run in order (stop on the first failure), or `{ tasks: { name: { run: \"…\" } } }`.",
       "anyOf": [
         {
@@ -349,7 +356,7 @@
           }
         },
         {
-          "$ref": "#/definitions/hookTasks"
+          "$ref": "#/definitions/hookTasksLayer"
         },
         {
           "type": "null",
@@ -357,7 +364,7 @@
         }
       ]
     },
-    "hookTasks": {
+    "hookTasksLayer": {
       "type": "object",
       "properties": {
         "tasks": {
@@ -369,7 +376,7 @@
           "additionalProperties": {
             "anyOf": [
               {
-                "$ref": "#/definitions/task"
+                "$ref": "#/definitions/taskLayer"
               },
               {
                 "type": "null",
@@ -396,7 +403,7 @@
       },
       "additionalProperties": false
     },
-    "task": {
+    "taskLayer": {
       "type": "object",
       "properties": {
         "run": {

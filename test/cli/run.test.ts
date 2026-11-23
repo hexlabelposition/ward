@@ -829,6 +829,32 @@ export default { hooks: { "pre-commit": { tasks: { format: {
     expect(ward(repo, ["run", "pre-commit"]).stderr).toBe("");
   });
 
+  it("runs tasks from configs the TS config extends", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "shared/base.yml",
+      JSON.stringify({
+        hooks: {
+          "pre-push": { tasks: { base: { run: node("console.log('base')") } } },
+        },
+      }),
+    );
+    repo.write(
+      "ward.config.ts",
+      `const preset = {
+  hooks: { prePush: { tasks: { preset: { run: ${JSON.stringify(node("console.log('preset')"))} } } } },
+};
+export default { extends: ["./shared/base.yml", preset] };
+`,
+    );
+
+    const { status, stdout, stderr } = ward(repo, ["run", "pre-push"]);
+
+    expect(stderr).toBe("");
+    expect(status).toBe(0);
+    expect(stdout).toBe("base\npreset\n");
+  });
+
   it('names the package.json section as `package.json "ward"`', () => {
     using repo = createTempRepo();
     repo.write("package.json", JSON.stringify({ ward: { hooks: 1 } }));

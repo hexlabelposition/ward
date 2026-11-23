@@ -43,4 +43,20 @@ describe("defineConfig", () => {
     // @ts-expect-error `run` must be a string
     defineConfig({ hooks: { "pre-commit": { tasks: { test: { run: 1 } } } } });
   });
+
+  it("types hooks of a config with extends as overrides", () => {
+    defineConfig({
+      extends: ["@company/ward-config", { hooks: { prePush: "npm test" } }],
+      hooks: {
+        prePush: null,
+        preCommit: { tasks: { eslint: { glob: "src/**" }, prettier: null } },
+      },
+    });
+    // @ts-expect-error without extends, a task needs `run`
+    defineConfig({
+      hooks: { preCommit: { tasks: { eslint: { glob: "*" } } } },
+    });
+    // @ts-expect-error without extends, a hook can't be null
+    defineConfig({ hooks: { prePush: null } });
+  });
 });

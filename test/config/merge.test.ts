@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Config, LocalConfig } from "../../src/config/define.ts";
 import { ConfigError } from "../../src/config/errors.ts";
-import { mergeLocalConfig } from "../../src/config/local.ts";
+import { mergeLayers } from "../../src/config/merge.ts";
 
 const merge = (main: Config, local: LocalConfig) =>
-  mergeLocalConfig(main, local, "ward.local.yml");
+  mergeLayers([
+    { config: main, name: "ward.yml" },
+    { config: local, name: "ward.local.yml" },
+  ]);
 
 const main: Config = {
   hooks: {
@@ -19,7 +22,7 @@ const main: Config = {
   },
 };
 
-describe("mergeLocalConfig", () => {
+describe("mergeLayers", () => {
   it("keeps the main config without local hooks", () => {
     expect(merge(main, {})).toEqual(main);
   });
@@ -117,9 +120,43 @@ describe("mergeLocalConfig", () => {
     ).toThrow(
       new ConfigError(
         "ward.local.yml is invalid:\n" +
-          "  hooks.post-merge: no such hook in the main config to remove\n" +
-          "  hooks.pre-commit.tasks.eslnt: no such task in the main config to remove\n" +
-          '  hooks.pre-push.tasks["type check"]: no such task in the main config to remove',
+          "  hooks.post-merge: no such hook in ward.yml to remove\n" +
+          "  hooks.pre-commit.tasks.eslnt: no such task in ward.yml to remove\n" +
+          '  hooks.pre-push.tasks["type check"]: no such task in ward.yml to remove',
+      ),
+    );
+  });
+
+  it("merges several layers in order and names those before in errors", () => {
+    expect(
+      mergeLayers([
+        { config: { hooks: { "pre-commit": "a" } }, name: "base" },
+        { config: { hooks: { "pre-push": "b" } }, name: "ward.yml" },
+        { config: { hooks: { "pre-commit": "c" } }, name: "ward.local.yml" },
+      ]),
+    ).toEqual({ hooks: { "pre-commit": "c", "pre-push": "b" } });
+
+    expect(() =>
+      mergeLayers([
+        { config: { hooks: { "pre-commit": "a" } }, name: "base" },
+        { config: {}, name: "ward.yml" },
+        { config: { hooks: { "pre-push": null } }, name: "ward.local.yml" },
+      ]),
+    ).toThrow(
+      new ConfigError(
+        "ward.local.yml is invalid:\n" +
+          "  hooks.pre-push: no such hook in base + ward.yml to remove",
+      ),
+    );
+  });
+
+  it("names the first layer when null has nothing before it", () => {
+    expect(() =>
+      mergeLayers([{ config: { hooks: { "pre-push": null } }, name: "x.yml" }]),
+    ).toThrow(
+      new ConfigError(
+        "x.yml is invalid:\n" +
+          "  hooks.pre-push: no such hook to remove, nothing comes before x.yml",
       ),
     );
   });

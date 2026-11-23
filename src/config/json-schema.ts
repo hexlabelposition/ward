@@ -82,104 +82,148 @@ function patterns(description: string) {
   };
 }
 
-const HOOK_REF = { $ref: "#/definitions/hook" };
+/** A path, a package name, or a config object (the root schema). */
+const EXTENDS_ENTRY = {
+  anyOf: [{ type: "string", pattern: "^(?!ward:)\\S" }, { $ref: "#" }],
+};
+
+const COMMAND = {
+  description:
+    "Shell command, run from the repo root. `{1}`, `{2}` … are git hook arguments; `{staged_files}`, `{push_files}` (`pre-push` only) and `{all_files}` are files.",
+  type: "string",
+  pattern: "\\S",
+};
 
 /**
- * The schema for the config object itself: `ward.yml`, or with `local`
- * `ward.local.yml`, where hooks and tasks may be `null` (removed) and a
- * task or hook may leave out what the main config already has.
+ * `hooks` and what it holds. `partial` (names end in `Layer`): for a config
+ * merged onto others - `ward.local.yml`, or one with `extends` - where hooks
+ * and tasks may be `null` (removed) and nothing is required, since the
+ * configs below may have it.
  */
-export function buildConfigSchema({ local = false } = {}) {
-  // Local overrides are merged into the main config, so nothing is required.
-  const required = (keys: string[]) => (local ? {} : { required: keys });
+function hookDefinitions(partial: boolean): Record<string, unknown> {
+  const suffix = partial ? "Layer" : "";
+  const ref = (name: string) => ({ $ref: `#/definitions/${name}${suffix}` });
+  const required = (keys: string[]) => (partial ? {} : { required: keys });
   const orNull = (schema: object, description: string) =>
-    local ? { anyOf: [schema, { type: "null", description }] } : schema;
+    partial ? { anyOf: [schema, { type: "null", description }] } : schema;
 
   const hookProperties: Record<string, unknown> = {};
   for (const hook of HOOKS) {
     const description = HOOK_DESCRIPTIONS[hook];
     // Draft-07 ignores keys next to `$ref`, so the description wraps it.
-    hookProperties[hook] = { description, allOf: [HOOK_REF] };
+    hookProperties[hook] = { description, allOf: [ref("hook")] };
     hookProperties[toCamel(hook)] = {
       description: `${description} Same as \`${hook}\`.`,
-      allOf: [HOOK_REF],
+      allOf: [ref("hook")],
     };
   }
 
   return {
-    $schema: "http://json-schema.org/draft-07/schema#",
-    title: local ? "Ward local config" : "Ward config",
-    description: local
-      ? "Contents of `ward.local.yml`: personal overrides merged on top of the main config, not committed. https://github.com/hexlabelposition/ward#local-overrides"
-      : 'Contents of `ward.yml` or the `"ward"` section of `package.json`. https://github.com/hexlabelposition/ward#configuration',
+    [`hooks${suffix}`]: {
+      type: "object",
+      properties: hookProperties,
+      additionalProperties: false,
+      // The same hook in both spellings.
+      dependencies: Object.fromEntries(
+        HOOKS.map((hook) => [hook, { not: { required: [toCamel(hook)] } }]),
+      ),
+    },
+    [`hook${suffix}`]: {
+      description:
+        'What the hook runs: one command, a list of commands run in order (stop on the first failure), or `{ tasks: { name: { run: "…" } } }`.',
+      anyOf: [
+        { $ref: "#/definitions/command" },
+        { type: "array", items: { $ref: "#/definitions/command" } },
+        ref("hookTasks"),
+        ...(partial ? [{ type: "null", description: "Remove the hook." }] : []),
+      ],
+    },
+    [`hookTasks${suffix}`]: {
+      type: "object",
+      properties: {
+        tasks: {
+          description: "Named tasks, run in the order they are listed.",
+          type: "object",
+          propertyNames: { pattern: "\\S" },
+          additionalProperties: orNull(ref("task"), "Remove the task."),
+        },
+        parallel: boolean("parallel"),
+        backup: boolean("backup"),
+        revert: boolean("revert"),
+      },
+      ...required(["tasks"]),
+      additionalProperties: false,
+    },
+    [`task${suffix}`]: {
+      type: "object",
+      properties: {
+        run: { $ref: "#/definitions/command" },
+        glob: patterns(
+          'Files the task runs on: one pattern or a list, any of them may match. A pattern without `/` matches the file name in any directory (`"*.ts"`), one with `/` the path from the repo root.',
+        ),
+        exclude: patterns(
+          "Files to leave out even when `glob` matches them, same pattern rules.",
+        ),
+        symlinks: boolean("symlinks"),
+        stageFixed: boolean("stageFixed"),
+      },
+      ...required(["run"]),
+      additionalProperties: false,
+    },
+  };
+}
+
+/**
+ * The schema for the config object itself: `ward.yml`, or with `local`
+ * `ward.local.yml`. A config with `extends` gets the partial rules of a
+ * local one, since its hooks are merged onto the extended configs.
+ */
+export function buildConfigSchema({ local = false } = {}) {
+  const schema = "http://json-schema.org/draft-07/schema#";
+  if (local) {
+    return {
+      $schema: schema,
+      title: "Ward local config",
+      description:
+        "Contents of `ward.local.yml`: personal overrides merged on top of the main config, not committed. https://github.com/hexlabelposition/ward#local-overrides",
+      type: "object",
+      properties: {
+        hooks: {
+          description:
+            "Hooks to change, add or remove (`null`). A command or a list replaces the hook, `{ tasks }` is merged into it by task name.",
+          allOf: [{ $ref: "#/definitions/hooksLayer" }],
+        },
+      },
+      additionalProperties: false,
+      definitions: { command: COMMAND, ...hookDefinitions(true) },
+    };
+  }
+
+  return {
+    $schema: schema,
+    title: "Ward config",
+    description:
+      'Contents of `ward.yml` or the `"ward"` section of `package.json`. https://github.com/hexlabelposition/ward#configuration',
     type: "object",
     properties: {
+      extends: {
+        description:
+          "Configs this one is merged onto, in order: a path relative to this file (`./ward.base.yml`) or an npm package (`@company/ward-config`). This config's hooks and tasks are merged on top, by name.",
+        anyOf: [EXTENDS_ENTRY, { type: "array", items: EXTENDS_ENTRY }],
+      },
       hooks: {
-        description: local
-          ? "Hooks to change, add or remove (`null`). A command or a list replaces the hook, `{ tasks }` is merged into it by task name."
-          : "Hooks without an entry are a no-op. A hook can be named as in git (`pre-commit`) or in camelCase (`preCommit`), not both.",
-        type: "object",
-        properties: hookProperties,
-        additionalProperties: false,
-        // The same hook in both spellings.
-        dependencies: Object.fromEntries(
-          HOOKS.map((hook) => [hook, { not: { required: [toCamel(hook)] } }]),
-        ),
+        description:
+          "Hooks without an entry are a no-op. A hook can be named as in git (`pre-commit`) or in camelCase (`preCommit`), not both. With `extends`, hooks and tasks are merged onto the extended ones: `null` removes one, and options can be changed one by one.",
       },
     },
     additionalProperties: false,
+    if: { required: ["extends"] },
+    then: { properties: { hooks: { $ref: "#/definitions/hooksLayer" } } },
+    else: { properties: { hooks: { $ref: "#/definitions/hooks" } } },
     definitions: {
-      command: {
-        description:
-          "Shell command, run from the repo root. `{1}`, `{2}` … are git hook arguments; `{staged_files}`, `{push_files}` (`pre-push` only) and `{all_files}` are files.",
-        type: "string",
-        pattern: "\\S",
-      },
-      hook: {
-        description:
-          'What the hook runs: one command, a list of commands run in order (stop on the first failure), or `{ tasks: { name: { run: "…" } } }`.',
-        anyOf: [
-          { $ref: "#/definitions/command" },
-          { type: "array", items: { $ref: "#/definitions/command" } },
-          { $ref: "#/definitions/hookTasks" },
-          ...(local ? [{ type: "null", description: "Remove the hook." }] : []),
-        ],
-      },
-      hookTasks: {
-        type: "object",
-        properties: {
-          tasks: {
-            description: "Named tasks, run in the order they are listed.",
-            type: "object",
-            propertyNames: { pattern: "\\S" },
-            additionalProperties: orNull(
-              { $ref: "#/definitions/task" },
-              "Remove the task.",
-            ),
-          },
-          parallel: boolean("parallel"),
-          backup: boolean("backup"),
-          revert: boolean("revert"),
-        },
-        ...required(["tasks"]),
-        additionalProperties: false,
-      },
-      task: {
-        type: "object",
-        properties: {
-          run: { $ref: "#/definitions/command" },
-          glob: patterns(
-            'Files the task runs on: one pattern or a list, any of them may match. A pattern without `/` matches the file name in any directory (`"*.ts"`), one with `/` the path from the repo root.',
-          ),
-          exclude: patterns(
-            "Files to leave out even when `glob` matches them, same pattern rules.",
-          ),
-          symlinks: boolean("symlinks"),
-          stageFixed: boolean("stageFixed"),
-        },
-        ...required(["run"]),
-        additionalProperties: false,
-      },
+      command: COMMAND,
+      ...hookDefinitions(false),
+      ...hookDefinitions(true),
     },
   };
 }
