@@ -1,0 +1,453 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ward local config",
+  "description": "Contents of `ward.local.yml`: personal overrides merged on top of the main config, not committed. https://github.com/hexlabelposition/ward#local-overrides",
+  "type": "object",
+  "properties": {
+    "hooks": {
+      "description": "Hooks to change, add or remove (`null`). A command or a list replaces the hook, `{ tasks }` is merged into it by task name.",
+      "type": "object",
+      "properties": {
+        "applypatch-msg": {
+          "description": "`git am`, before a patch is applied. `{1}` is the file with the proposed commit message.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "applypatchMsg": {
+          "description": "`git am`, before a patch is applied. `{1}` is the file with the proposed commit message. Same as `applypatch-msg`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "pre-applypatch": {
+          "description": "`git am`, after a patch is applied and before it is committed.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "preApplypatch": {
+          "description": "`git am`, after a patch is applied and before it is committed. Same as `pre-applypatch`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "post-applypatch": {
+          "description": "`git am`, after a patch is committed.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "postApplypatch": {
+          "description": "`git am`, after a patch is committed. Same as `post-applypatch`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "pre-commit": {
+          "description": "`git commit`, before the commit message is asked for. Tasks get the staged files.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "preCommit": {
+          "description": "`git commit`, before the commit message is asked for. Tasks get the staged files. Same as `pre-commit`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "pre-merge-commit": {
+          "description": "`git merge`, before a merge commit is created.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "preMergeCommit": {
+          "description": "`git merge`, before a merge commit is created. Same as `pre-merge-commit`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "prepare-commit-msg": {
+          "description": "`git commit`, before the message editor opens. `{1}` is the message file, `{2}` the message source.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "prepareCommitMsg": {
+          "description": "`git commit`, before the message editor opens. `{1}` is the message file, `{2}` the message source. Same as `prepare-commit-msg`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "commit-msg": {
+          "description": "`git commit`, after the message is written. `{1}` is the message file.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "commitMsg": {
+          "description": "`git commit`, after the message is written. `{1}` is the message file. Same as `commit-msg`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "post-commit": {
+          "description": "`git commit`, after the commit is created.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "postCommit": {
+          "description": "`git commit`, after the commit is created. Same as `post-commit`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "pre-rebase": {
+          "description": "`git rebase`, before it starts. `{1}` is the upstream.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "preRebase": {
+          "description": "`git rebase`, before it starts. `{1}` is the upstream. Same as `pre-rebase`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "post-checkout": {
+          "description": "`git checkout` / `git switch`, after the worktree is updated. `{1}` previous HEAD, `{2}` new HEAD, `{3}` 1 for a branch checkout.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "postCheckout": {
+          "description": "`git checkout` / `git switch`, after the worktree is updated. `{1}` previous HEAD, `{2}` new HEAD, `{3}` 1 for a branch checkout. Same as `post-checkout`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "post-merge": {
+          "description": "`git merge` / `git pull`, after a merge.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "postMerge": {
+          "description": "`git merge` / `git pull`, after a merge. Same as `post-merge`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "pre-push": {
+          "description": "`git push`, before anything is pushed. Tasks get the files of the pushed commits. `{1}` remote name, `{2}` URL.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "prePush": {
+          "description": "`git push`, before anything is pushed. Tasks get the files of the pushed commits. `{1}` remote name, `{2}` URL. Same as `pre-push`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "pre-auto-gc": {
+          "description": "`git gc --auto`, before it runs.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "preAutoGc": {
+          "description": "`git gc --auto`, before it runs. Same as `pre-auto-gc`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "post-rewrite": {
+          "description": "`git commit --amend` / `git rebase`, after commits are rewritten. `{1}` is the command.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "postRewrite": {
+          "description": "`git commit --amend` / `git rebase`, after commits are rewritten. `{1}` is the command. Same as `post-rewrite`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "sendemail-validate": {
+          "description": "`git send-email`, for each patch. `{1}` is the patch file.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        },
+        "sendemailValidate": {
+          "description": "`git send-email`, for each patch. `{1}` is the patch file. Same as `sendemail-validate`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/hook"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "dependencies": {
+        "applypatch-msg": {
+          "not": {
+            "required": ["applypatchMsg"]
+          }
+        },
+        "pre-applypatch": {
+          "not": {
+            "required": ["preApplypatch"]
+          }
+        },
+        "post-applypatch": {
+          "not": {
+            "required": ["postApplypatch"]
+          }
+        },
+        "pre-commit": {
+          "not": {
+            "required": ["preCommit"]
+          }
+        },
+        "pre-merge-commit": {
+          "not": {
+            "required": ["preMergeCommit"]
+          }
+        },
+        "prepare-commit-msg": {
+          "not": {
+            "required": ["prepareCommitMsg"]
+          }
+        },
+        "commit-msg": {
+          "not": {
+            "required": ["commitMsg"]
+          }
+        },
+        "post-commit": {
+          "not": {
+            "required": ["postCommit"]
+          }
+        },
+        "pre-rebase": {
+          "not": {
+            "required": ["preRebase"]
+          }
+        },
+        "post-checkout": {
+          "not": {
+            "required": ["postCheckout"]
+          }
+        },
+        "post-merge": {
+          "not": {
+            "required": ["postMerge"]
+          }
+        },
+        "pre-push": {
+          "not": {
+            "required": ["prePush"]
+          }
+        },
+        "pre-auto-gc": {
+          "not": {
+            "required": ["preAutoGc"]
+          }
+        },
+        "post-rewrite": {
+          "not": {
+            "required": ["postRewrite"]
+          }
+        },
+        "sendemail-validate": {
+          "not": {
+            "required": ["sendemailValidate"]
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "command": {
+      "description": "Shell command, run from the repo root. `{1}`, `{2}` … are git hook arguments; `{staged_files}`, `{push_files}` (`pre-push` only) and `{all_files}` are files.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "hook": {
+      "description": "What the hook runs: one command, a list of commands run in order (stop on the first failure), or `{ tasks: { name: { run: \"…\" } } }`.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/command"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/command"
+          }
+        },
+        {
+          "$ref": "#/definitions/hookTasks"
+        },
+        {
+          "type": "null",
+          "description": "Remove the hook."
+        }
+      ]
+    },
+    "hookTasks": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "description": "Named tasks, run in the order they are listed.",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "\\S"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/task"
+              },
+              {
+                "type": "null",
+                "description": "Remove the task."
+              }
+            ]
+          }
+        },
+        "parallel": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start all tasks at once and let each run to the end; the hook fails if any of them fails. Tasks run one after another by default."
+        },
+        "backup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save the index and working tree with `git stash create` before the run, so they can be restored if a task breaks them. `false` skips it to save time in large repos."
+        },
+        "revert": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a task fails, put the index and working tree back as they were before the run, from the backup. `false` keeps the tasks' changes for inspection. Needs `backup`."
+        }
+      },
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/command"
+        },
+        "glob": {
+          "description": "Files the task runs on: one pattern or a list, any of them may match. A pattern without `/` matches the file name in any directory (`\"*.ts\"`), one with `/` the path from the repo root.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "exclude": {
+          "description": "Files to leave out even when `glob` matches them, same pattern rules.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "symlinks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pass symlinks to the task too. Off by default: a formatter would rewrite the file the link points to."
+        },
+        "stageFixed": {
+          "type": "boolean",
+          "default": true,
+          "description": "`git add` the staged files the task changed, so a formatter's fixes go into the commit. `false` leaves them unstaged."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

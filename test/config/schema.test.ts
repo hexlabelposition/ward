@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ConfigError } from "../../src/config/errors.ts";
-import { normalizeConfig, validateConfig } from "../../src/config/schema.ts";
+import {
+  normalizeConfig,
+  validateConfig,
+  validateLocalConfig,
+} from "../../src/config/schema.ts";
 
 /** The problems listed in the error, without the "is invalid" header. */
 function issues(raw: unknown): string[] {
@@ -476,5 +480,57 @@ describe("normalizeConfig", () => {
     const { hooks } = normalizeConfig({ hooks: { "pre-commit": commands } });
     commands.push("c");
     expect(hooks["pre-commit"]?.tasks).toHaveLength(2);
+  });
+});
+
+describe("validateLocalConfig", () => {
+  function localIssues(raw: unknown): string[] {
+    try {
+      validateLocalConfig(raw, "ward.local.yml");
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      return error.message
+        .split("\n")
+        .slice(1)
+        .map((line) => line.trim());
+    }
+    return [];
+  }
+
+  it("accepts null hooks and tasks, hooks without tasks, tasks without run", () => {
+    expect(
+      localIssues({
+        hooks: {
+          prePush: null,
+          "commit-msg": { parallel: true },
+          "pre-commit": {
+            tasks: { eslint: null, prettier: { glob: "*.md" } },
+          },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("checks everything else as the main config", () => {
+    expect(
+      localIssues({
+        hooks: {
+          "pre-comit": "npm test",
+          "pre-commit": { paralel: true, tasks: { t: { glob: [] } } },
+          "pre-push": "",
+        },
+      }),
+    ).toEqual([
+      'hooks.pre-comit: unknown hook. Did you mean "pre-commit"?',
+      'hooks.pre-commit.paralel: unknown option. Did you mean "parallel"?',
+      "hooks.pre-commit.tasks.t.glob: list of patterns is empty",
+      "hooks.pre-push: command is empty",
+    ]);
+  });
+
+  it("does not let the main config use null", () => {
+    expect(issues({ hooks: { "pre-commit": null } })).toEqual([
+      "hooks.pre-commit: expected a command, a list of commands or `{ tasks }`, got an empty value",
+    ]);
   });
 });

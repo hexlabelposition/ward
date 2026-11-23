@@ -1,10 +1,13 @@
 // Public API.
-export { defineConfig } from "./config/define.ts";
+export { defineConfig, defineLocalConfig } from "./config/define.ts";
 export type {
   CamelHookName,
   Config,
   HookConfig,
   HookName,
+  HookOptions,
+  LocalConfig,
+  LocalHookConfig,
   TaskConfig,
   TaskContext,
   TaskFunction,

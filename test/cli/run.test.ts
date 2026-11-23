@@ -769,6 +769,38 @@ export default { hooks: { "pre-commit": { tasks: { format: {
     );
   });
 
+  it("runs the hook as ward.local.yml changes it", () => {
+    using repo = createTempRepo();
+    repo.write(
+      "ward.yml",
+      JSON.stringify({
+        hooks: {
+          "pre-push": {
+            tasks: {
+              main: { run: node("console.log('main')") },
+              slow: { run: node("console.log('slow')") },
+            },
+          },
+        },
+      }),
+    );
+    repo.write(
+      "ward.local.yml",
+      JSON.stringify({
+        hooks: {
+          prePush: {
+            tasks: { slow: null, mine: { run: node("console.log('mine')") } },
+          },
+        },
+      }),
+    );
+
+    const { status, stdout } = ward(repo, ["run", "pre-push"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toBe("main\nmine\n");
+  });
+
   it('names the package.json section as `package.json "ward"`', () => {
     using repo = createTempRepo();
     repo.write("package.json", JSON.stringify({ ward: { hooks: 1 } }));

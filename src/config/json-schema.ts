@@ -84,8 +84,17 @@ function patterns(description: string) {
 
 const HOOK_REF = { $ref: "#/definitions/hook" };
 
-/** The schema for the config object itself (`ward.yml`). */
-export function buildConfigSchema() {
+/**
+ * The schema for the config object itself: `ward.yml`, or with `local`
+ * `ward.local.yml`, where hooks and tasks may be `null` (removed) and a
+ * task or hook may leave out what the main config already has.
+ */
+export function buildConfigSchema({ local = false } = {}) {
+  // Local overrides are merged into the main config, so nothing is required.
+  const required = (keys: string[]) => (local ? {} : { required: keys });
+  const orNull = (schema: object, description: string) =>
+    local ? { anyOf: [schema, { type: "null", description }] } : schema;
+
   const hookProperties: Record<string, unknown> = {};
   for (const hook of HOOKS) {
     const description = HOOK_DESCRIPTIONS[hook];
@@ -99,14 +108,16 @@ export function buildConfigSchema() {
 
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
-    title: "Ward config",
-    description:
-      'Contents of `ward.yml` or the `"ward"` section of `package.json`. https://github.com/hexlabelposition/ward#configuration',
+    title: local ? "Ward local config" : "Ward config",
+    description: local
+      ? "Contents of `ward.local.yml`: personal overrides merged on top of the main config, not committed. https://github.com/hexlabelposition/ward#local-overrides"
+      : 'Contents of `ward.yml` or the `"ward"` section of `package.json`. https://github.com/hexlabelposition/ward#configuration',
     type: "object",
     properties: {
       hooks: {
-        description:
-          "Hooks without an entry are a no-op. A hook can be named as in git (`pre-commit`) or in camelCase (`preCommit`), not both.",
+        description: local
+          ? "Hooks to change, add or remove (`null`). A command or a list replaces the hook, `{ tasks }` is merged into it by task name."
+          : "Hooks without an entry are a no-op. A hook can be named as in git (`pre-commit`) or in camelCase (`preCommit`), not both.",
         type: "object",
         properties: hookProperties,
         additionalProperties: false,
@@ -131,6 +142,7 @@ export function buildConfigSchema() {
           { $ref: "#/definitions/command" },
           { type: "array", items: { $ref: "#/definitions/command" } },
           { $ref: "#/definitions/hookTasks" },
+          ...(local ? [{ type: "null", description: "Remove the hook." }] : []),
         ],
       },
       hookTasks: {
@@ -140,13 +152,16 @@ export function buildConfigSchema() {
             description: "Named tasks, run in the order they are listed.",
             type: "object",
             propertyNames: { pattern: "\\S" },
-            additionalProperties: { $ref: "#/definitions/task" },
+            additionalProperties: orNull(
+              { $ref: "#/definitions/task" },
+              "Remove the task.",
+            ),
           },
           parallel: boolean("parallel"),
           backup: boolean("backup"),
           revert: boolean("revert"),
         },
-        required: ["tasks"],
+        ...required(["tasks"]),
         additionalProperties: false,
       },
       task: {
@@ -162,7 +177,7 @@ export function buildConfigSchema() {
           symlinks: boolean("symlinks"),
           stageFixed: boolean("stageFixed"),
         },
-        required: ["run"],
+        ...required(["run"]),
         additionalProperties: false,
       },
     },

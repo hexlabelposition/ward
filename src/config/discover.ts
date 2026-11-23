@@ -20,6 +20,13 @@ const FILES: readonly [name: string, format: ConfigFormat][] = [
   ["package.json", "package"],
 ];
 
+/** Personal overrides, not committed (`ward.local.*` in `.gitignore`). */
+const LOCAL_FILES: readonly [name: string, format: ConfigFormat][] = [
+  ["ward.local.ts", "ts"],
+  ["ward.local.yml", "yaml"],
+  ["ward.local.yaml", "yaml"],
+];
+
 /**
  * Find the config in the repo root: `ward.config.ts` → `ward.{yml,yaml}` →
  * the `"ward"` key of `package.json`. Only reads `package.json`, so it stays
@@ -29,10 +36,28 @@ const FILES: readonly [name: string, format: ConfigFormat][] = [
  * exist: picking one silently would hide the other.
  */
 export function discoverConfig(root: string): ConfigSource | null {
-  const found = FILES.filter(([name, format]) => {
-    const file = join(root, name);
-    return format === "package" ? hasWardKey(file) : isFile(file);
-  }).map(([name, format]) => ({ name, format, file: join(root, name) }));
+  return discoverOne(root, FILES, "configs");
+}
+
+/**
+ * Find the local override in the repo root: `ward.local.ts` →
+ * `ward.local.{yml,yaml}`. Same rules as `discoverConfig`.
+ */
+export function discoverLocalConfig(root: string): ConfigSource | null {
+  return discoverOne(root, LOCAL_FILES, "local configs");
+}
+
+function discoverOne(
+  root: string,
+  files: readonly [name: string, format: ConfigFormat][],
+  kind: string,
+): ConfigSource | null {
+  const found = files
+    .filter(([name, format]) => {
+      const file = join(root, name);
+      return format === "package" ? hasWardKey(file) : isFile(file);
+    })
+    .map(([name, format]) => ({ name, format, file: join(root, name) }));
 
   if (found.length > 1) {
     const names = found
@@ -40,7 +65,7 @@ export function discoverConfig(root: string): ConfigSource | null {
         format === "package" ? `${name} ("ward" key)` : name,
       )
       .join(", ");
-    throw new ConfigError(`several configs found: ${names}. Keep one of them.`);
+    throw new ConfigError(`several ${kind} found: ${names}. Keep one of them.`);
   }
 
   const [source] = found;

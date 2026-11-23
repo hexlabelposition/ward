@@ -6,7 +6,12 @@ import {
 } from "../hooks/list.ts";
 import { DEFAULT_FILE_SOURCE, fileSources } from "../runner/command.ts";
 import { checkGlob } from "../runner/match.ts";
-import type { Config, HookConfig, TaskFunction } from "./define.ts";
+import type {
+  Config,
+  HookConfig,
+  LocalConfig,
+  TaskFunction,
+} from "./define.ts";
 import { ConfigError } from "./errors.ts";
 
 /**
@@ -68,9 +73,28 @@ export const KNOWN = {
  * @throws ConfigError listing each problem with its path in the config.
  */
 export function validateConfig(raw: unknown, name: string): Config {
+  check(raw, name, false);
+  return raw as Config;
+}
+
+/**
+ * Check `ward.local.*` on its own, before it is merged: the same rules,
+ * except that hooks and tasks may be `null` (removed), a `{ tasks }` hook
+ * may leave out `tasks` and a task may leave out `run`. The merged config
+ * goes through `validateConfig` after that.
+ *
+ * @throws ConfigError listing each problem with its path in the config.
+ */
+export function validateLocalConfig(raw: unknown, name: string): LocalConfig {
+  check(raw, name, true);
+  return raw as LocalConfig;
+}
+
+function check(raw: unknown, name: string, local: boolean): void {
   const issues: string[] = [];
-  const report = (path: string, message: string) =>
+  const report: Report = (path, message) =>
     issues.push(path ? `${path}: ${message}` : message);
+  report.local = local;
 
   checkConfig(raw, report);
 
@@ -79,10 +103,10 @@ export function validateConfig(raw: unknown, name: string): Config {
       `${name} is invalid:\n${issues.map((issue) => `  ${issue}`).join("\n")}`,
     );
   }
-  return raw as Config;
 }
 
-type Report = (path: string, message: string) => void;
+/** Collects a problem; `local` is set while checking `ward.local.*`. */
+type Report = ((path: string, message: string) => void) & { local?: boolean };
 
 function checkConfig(raw: unknown, report: Report): void {
   if (!isObject(raw)) {
@@ -121,6 +145,7 @@ function checkConfig(raw: unknown, report: Report): void {
       continue;
     }
     seen.set(hook, key);
+    if (value === null && report.local) continue;
     checkHook(value, hook, path, report);
   }
 }
@@ -163,7 +188,7 @@ function checkHook(
     }
   }
   if (!Object.hasOwn(value, "tasks")) {
-    report(path, "missing `tasks`");
+    if (!report.local) report(path, "missing `tasks`");
     return;
   }
   const tasks = value.tasks;
@@ -178,6 +203,7 @@ function checkHook(
   for (const [name, task] of Object.entries(tasks)) {
     const taskPath = join(tasksPath, name);
     if (name.trim() === "") report(taskPath, "task name is empty");
+    if (task === null && report.local) continue;
     checkTask(task, hook, taskPath, report);
   }
 }
@@ -211,7 +237,7 @@ function checkTask(
     }
   }
   if (!Object.hasOwn(task, "run")) {
-    report(path, "missing `run`");
+    if (!report.local) report(path, "missing `run`");
     return;
   }
   const filtered =
@@ -335,7 +361,7 @@ function levenshtein(a: string, b: string): number {
 }
 
 /** `hooks.pre-commit`, or `tasks["my task"]` for keys that don't read as a path. */
-function join(path: string, key: string): string {
+export function join(path: string, key: string): string {
   return /^[\w-]+$/.test(key)
     ? `${path}.${key}`
     : `${path}[${JSON.stringify(key)}]`;

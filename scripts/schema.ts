@@ -1,5 +1,5 @@
-// Writes the JSON Schemas editors use for `ward.yml` and `package.json`.
-// Run with `bun run schema` after changing hooks or config options.
+// Writes the JSON Schemas editors use for `ward.yml`, `ward.local.yml` and
+// `package.json`. Run with `bun run schema` after changing hooks or options.
 import { writeFileSync } from "node:fs";
 import {
   buildConfigSchema,
@@ -11,4 +11,5 @@ const write = (file: string, schema: unknown) => {
 };
 
 write("schema.json", buildConfigSchema());
+write("local.schema.json", buildConfigSchema({ local: true }));
 write("package.schema.json", buildPackageSchema());

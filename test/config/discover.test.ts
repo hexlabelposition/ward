@@ -1,7 +1,10 @@
 import { mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { discoverConfig } from "../../src/config/discover.ts";
+import {
+  discoverConfig,
+  discoverLocalConfig,
+} from "../../src/config/discover.ts";
 import { ConfigError } from "../../src/config/errors.ts";
 import { createTempRepo } from "../helpers/git-repo.ts";
 
@@ -103,4 +106,46 @@ describe("discoverConfig", () => {
       expect(discoverConfig(repo.dir)).toBe(null);
     },
   );
+});
+
+describe("discoverLocalConfig", () => {
+  it("returns null without a local config", () => {
+    using repo = createTempRepo();
+    repo.write("ward.yml", "");
+
+    expect(discoverLocalConfig(repo.dir)).toBe(null);
+  });
+
+  it.each([
+    ["ward.local.ts", "ts"],
+    ["ward.local.yml", "yaml"],
+    ["ward.local.yaml", "yaml"],
+  ])("finds %s", (name, format) => {
+    using repo = createTempRepo();
+    repo.write(name, "");
+
+    expect(discoverLocalConfig(repo.dir)).toEqual({
+      format,
+      file: join(repo.dir, name),
+    });
+  });
+
+  it("is not taken for the main config", () => {
+    using repo = createTempRepo();
+    repo.write("ward.local.yml", "");
+
+    expect(discoverConfig(repo.dir)).toBe(null);
+  });
+
+  it("fails on several local configs", () => {
+    using repo = createTempRepo();
+    repo.write("ward.local.ts", "");
+    repo.write("ward.local.yml", "");
+
+    expect(() => discoverLocalConfig(repo.dir)).toThrow(
+      new ConfigError(
+        "several local configs found: ward.local.ts, ward.local.yml. Keep one of them.",
+      ),
+    );
+  });
 });

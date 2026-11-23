@@ -71,7 +71,7 @@ Ward looks for the config in the repo root, in this order:
 2. `ward.yml` / `ward.yaml`
 3. `"ward"` section in `package.json`
 
-If more than one is found, Ward stops with an error instead of silently picking one. Without a config every hook does nothing.
+If more than one is found, Ward stops with an error instead of silently picking one. Without a config every hook does nothing. Personal changes that should not be committed go in `ward.local.*` (see [Local overrides](#local-overrides)).
 
 ### TypeScript
 
@@ -130,7 +130,7 @@ hooks:
   pre-commit: npm run lint
 ```
 
-Without `node_modules` (Deno), use `https://unpkg.com/@hexlabelposition/ward/schema.json`.
+Without `node_modules` (Deno), use `https://unpkg.com/@hexlabelposition/ward/schema.json`. For `ward.local.yml`, use `local.schema.json` instead: it allows `null` and partial tasks.
 
 For `package.json` in VS Code, add the schema in `.vscode/settings.json`. It is applied next to the usual `package.json` schema and only describes the `"ward"` key:
 
@@ -145,7 +145,7 @@ For `package.json` in VS Code, add the schema in `.vscode/settings.json`. It is 
 }
 ```
 
-In JetBrains IDEs, map `schema.json` to `ward.yml` in Settings | Languages & Frameworks | Schemas and DTDs | JSON Schema Mappings.
+In JetBrains IDEs, map `schema.json` to `ward.yml` (and `local.schema.json` to `ward.local.yml`) in Settings | Languages & Frameworks | Schemas and DTDs | JSON Schema Mappings.
 
 The schema checks the shape of the config. Rules that depend on the hook, such as `{push_files}` outside `pre-push`, and pattern syntax are checked by Ward when a hook runs (see [Config errors](#config-errors)).
 
@@ -287,6 +287,45 @@ Untracked files are not touched. Binary files, renames, deletions and symlinks a
 | `revert`    | `--no-revert` | `false` keeps the changes of the tasks after a failure, for inspection |
 
 The flags are for `ward run`, right after the hook name: `ward run pre-commit --no-revert`.
+
+## Local overrides
+
+`ward.local.ts`, `ward.local.yml` or `ward.local.yaml` in the repo root is merged on top of the main config. Use it for changes only you want: skip a slow hook, add a task, narrow a `glob`. Add `ward.local.*` to `.gitignore`.
+
+```yaml
+# ward.local.yml
+hooks:
+  pre-push: null # remove the hook
+  pre-commit:
+    parallel: false
+    tasks:
+      eslint:
+        glob: "src/**/*.ts" # only this option changes, `run` stays
+      prettier: null # remove the task
+      spellcheck: # a new task runs after the others
+        run: npx cspell {staged_files}
+```
+
+- Hooks are matched by the hook they name, so `prePush` changes `pre-push`.
+- A command or a list of commands replaces the hook. `null` removes it.
+- `{ tasks }` is merged into a hook with tasks: hook options override, tasks are matched by name and their options replaced one by one. A task keeps its place, new tasks run last, `null` removes one. Over a hook written as a command or a list, or a hook the main config does not have, it is used as is and needs a `run` for every task.
+- `null` for a hook or task the main config does not have is an error, since it is most likely a typo.
+- It works without a main config too, as a config only you use.
+
+`ward.local.ts` gets types from `defineLocalConfig`:
+
+```ts
+// ward.local.ts
+import { defineLocalConfig } from "@hexlabelposition/ward";
+
+export default defineLocalConfig({
+  hooks: {
+    prePush: null,
+  },
+});
+```
+
+Both files are checked on their own first, and the merged config after that. Problems that come from the merge, such as a new task without `run`, name both files: `ward.yml + ward.local.yml is invalid`. If there are several local files, Ward stops with an error, as for the main config.
 
 ## Config errors
 

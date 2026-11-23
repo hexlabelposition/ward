@@ -20,6 +20,12 @@ describe("JSON Schema", () => {
     expect(readJson("schema.json")).toEqual(schema);
   });
 
+  it("local.schema.json is up to date (run `bun run schema`)", () => {
+    expect(readJson("local.schema.json")).toEqual(
+      buildConfigSchema({ local: true }),
+    );
+  });
+
   it("package.schema.json is up to date (run `bun run schema`)", () => {
     expect(readJson("package.schema.json")).toEqual(buildPackageSchema());
   });
@@ -29,7 +35,11 @@ describe("JSON Schema", () => {
       files: string[];
       exports: Record<string, string>;
     };
-    for (const file of ["schema.json", "package.schema.json"]) {
+    for (const file of [
+      "schema.json",
+      "local.schema.json",
+      "package.schema.json",
+    ]) {
       expect(pkg.files).toContain(file);
       expect(pkg.exports[`./${file}`]).toBe(`./${file}`);
     }

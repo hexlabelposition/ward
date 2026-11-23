@@ -34,11 +34,13 @@
     },
     "./package.json": "./package.json",
     "./schema.json": "./schema.json",
+    "./local.schema.json": "./local.schema.json",
     "./package.schema.json": "./package.schema.json"
   },
   "files": [
     "dist",
     "schema.json",
+    "local.schema.json",
     "package.schema.json"
   ],
   "engines": {
@@ -56,7 +58,7 @@
     "test:bun": "bun --bun vitest run",
     "test:deno": "deno run -A test/run-deno.ts run",
     "test:watch": "vitest",
-    "schema": "node scripts/schema.ts && prettier --write schema.json package.schema.json",
+    "schema": "node scripts/schema.ts && prettier --write schema.json local.schema.json package.schema.json",
     "release": "bumpp --sign"
   },
   "devDependencies": {
